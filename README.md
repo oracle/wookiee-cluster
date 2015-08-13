@@ -1,6 +1,6 @@
 # Wookiee - Distributed Messaging (Cluster Component)
 
-[![Build Status](https://travis-ci.org/Webtrends/wookiee-metrics.svg?branch=master)](https://travis-ci.org/Webtrends/wookiee-kafka) [![Coverage Status](https://coveralls.io/repos/Webtrends/wookiee-kafka/badge.svg?branch=master&service=github)](https://coveralls.io/github/Webtrends/wookiee-kafka?branch=master) [![Latest Release](https://img.shields.io/github/release/webtrends/wookiee-kafka.svg)](https://github.com/Webtrends/wookiee-kafka/releases) [![License](http://img.shields.io/:license-Apache%202-red.svg)](http://www.apache.org/licenses/LICENSE-2.0.txt)
+[![Build Status](https://travis-ci.org/Webtrends/wookiee-cluster.svg?branch=master)](https://travis-ci.org/Webtrends/wookiee-cluster) [![Coverage Status](https://coveralls.io/repos/Webtrends/wookiee-cluster/badge.svg?branch=master&service=github)](https://coveralls.io/github/Webtrends/wookiee-cluster?branch=master) [![Latest Release](https://img.shields.io/github/release/webtrends/wookiee-cluster.svg)](https://github.com/Webtrends/wookiee-cluster/releases) [![License](http://img.shields.io/:license-Apache%202-red.svg)](http://www.apache.org/licenses/LICENSE-2.0.txt)
 
 [Main Wookiee Project](https://github.com/Webtrends/wookiee)
 
@@ -15,7 +15,7 @@ The sender simply uses a 'topic' to send messages to instead of having to know t
 This pattern allows for our systems to scale by adding additional receivers without the need to change logic or
 re-deploy with the knowledge of new receivers.
 
-For a working example see [Wookiee - Cluster Example](../../examples/example-cluster)
+For a working example see [Wookiee - Cluster Example](example-cluster)
 
 ## Basic Usage
 
