@@ -1,0 +1,159 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Wookiee-cluster by Webtrends</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/github-light.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>Wookiee-cluster</h1>
+        <p>Wookiee Component - Cluster</p>
+
+        <p class="view"><a href="https://github.com/Webtrends/wookiee-cluster">View the Project on GitHub <small>Webtrends/wookiee-cluster</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/Webtrends/wookiee-cluster/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/Webtrends/wookiee-cluster/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/Webtrends/wookiee-cluster">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>
+<a id="wookiee---distributed-messaging-cluster-component" class="anchor" href="#wookiee---distributed-messaging-cluster-component" aria-hidden="true"><span class="octicon octicon-link"></span></a>Wookiee - Distributed Messaging (Cluster Component)</h1>
+
+<p><a href="https://travis-ci.org/Webtrends/wookiee-cluster"><img src="https://travis-ci.org/Webtrends/wookiee-cluster.svg?branch=master" alt="Build Status"></a> <a href="https://coveralls.io/github/Webtrends/wookiee-cluster?branch=master"><img src="https://coveralls.io/repos/Webtrends/wookiee-cluster/badge.svg?branch=master&amp;service=github" alt="Coverage Status"></a> <a href="https://github.com/Webtrends/wookiee-cluster/releases"><img src="https://img.shields.io/github/release/webtrends/wookiee-cluster.svg" alt="Latest Release"></a> <a href="http://www.apache.org/licenses/LICENSE-2.0.txt"><img src="http://img.shields.io/:license-Apache%202-red.svg" alt="License"></a></p>
+
+<p><a href="https://github.com/Webtrends/wookiee">Main Wookiee Project</a></p>
+
+<p>For Configuration information see <a href="docs/config.md">Cluster Config</a></p>
+
+<h1>
+<a id="overview" class="anchor" href="#overview" aria-hidden="true"><span class="octicon octicon-link"></span></a>Overview</h1>
+
+<p>With the benefits of distributed cluster of nodes, developers can take advantage of Publish-Subscribe or Send-Subscribe
+messaging patterns. These patterns have the advantage that the sender of messages has no knowledge of the receivers.
+The sender simply uses a 'topic' to send messages to instead of having to know that actual address of the receiver.</p>
+
+<p>This pattern allows for our systems to scale by adding additional receivers without the need to change logic or
+re-deploy with the knowledge of new receivers.</p>
+
+<p>For a working example see <a href="example-cluster">Wookiee - Cluster Example</a></p>
+
+<h2>
+<a id="basic-usage" class="anchor" href="#basic-usage" aria-hidden="true"><span class="octicon octicon-link"></span></a>Basic Usage</h2>
+
+<p>The system is designed so that a developer simply needs to apply a trait (interface) on an actor in order to have full
+access to this functionality. Wookiee is responsible for managing the peer to peer communication and thus
+the developer of the service does not need to handle any of that information. The act of 'publishing' a message
+guarantees that the message will be sent to all subscribers, while 'sending' a message will round-robin to only one of
+the subscribers.</p>
+
+<p><img src="https://webtrends.jiveon.com/servlet/JiveServlet/showImage/102-29731-8-12519/temp.png" alt=""></p>
+
+<h2>
+<a id="sendingreceiving-messages" class="anchor" href="#sendingreceiving-messages" aria-hidden="true"><span class="octicon octicon-link"></span></a>Sending/Receiving Messages</h2>
+
+<p>In order to take full benefit of the functionality one simply needs to apply the trait <code>MessagingAdapter</code> and
+then start interacting with the system. When an actor subscribes to a topic it will then receive instances of
+<code>com.webtrends.communication.Message</code> which is the container that consists of the topic, sender, and
+actual message content that was sent or published/sent.</p>
+
+<div class="highlight highlight-scala"><pre>
+<span class="pl-k">import</span> <span class="pl-v">com.webtrends.communication.</span><span class="pl-v">MessagingAdapter</span>
+<span class="pl-k">import</span> <span class="pl-v">com.webtrends.communication.</span><span class="pl-v">Message</span>
+
+<span class="pl-c">// Define the actor and have it apply the MessagingAdapter trait</span>
+<span class="pl-k">class</span> <span class="pl-en">MyReceiverActor</span> <span class="pl-k">extends</span> <span class="pl-e">Actor</span> <span class="pl-k">with</span> <span class="pl-e">ActorLoggingAdapter</span> <span class="pl-k">with</span> <span class="pl-e">MessagingAdapter</span> {
+    <span class="pl-k">def</span> <span class="pl-en">preStart</span><span class="pl-k">:</span> <span class="pl-k">Unit</span> <span class="pl-k">=</span> {
+        <span class="pl-c">// Subscribe to a specific topic to receive messages from other nodes in the cluster</span>
+        subscribe(<span class="pl-s"><span class="pl-pds">"</span>cluster-topic<span class="pl-pds">"</span></span>, <span class="pl-v">self</span> <span class="pl-c">/* I am the receiver, but could be another ActorRef */</span>, <span class="pl-c1">false</span> <span class="pl-c">/* this is a subscription for messages from other cluster nodes */</span>)
+        <span class="pl-c">// Subscribe to a specific topic to receive messages from other nodes in the cluster and the sender expects a response</span>
+        subscribe(<span class="pl-s"><span class="pl-pds">"</span>cluster-topic-with-response<span class="pl-pds">"</span></span>, <span class="pl-v">self</span> <span class="pl-c">/* I am the receiver, but could be another ActorRef */</span>, <span class="pl-c1">false</span> <span class="pl-c">/* this is a subscription for messages from other cluster nodes */</span>)
+        <span class="pl-c">// Subscribe to a specific topic to receive messages from only within this node</span>
+        subscribe(<span class="pl-s"><span class="pl-pds">"</span>internal-topic<span class="pl-pds">"</span></span>, <span class="pl-v">self</span> <span class="pl-c">/* I am the receiver, but could be another ActorRef */</span>, <span class="pl-c1">true</span><span class="pl-c">/* this is a subscription for messages from only this node*/</span>)
+    }
+    <span class="pl-k">def</span> <span class="pl-en">postStop</span><span class="pl-k">:</span> <span class="pl-k">Unit</span> <span class="pl-k">=</span> {
+        <span class="pl-c">// Unsubscribe from the given topics</span>
+        unsubscribe(<span class="pl-s"><span class="pl-pds">"</span>cluster-topic<span class="pl-pds">"</span></span>, <span class="pl-v">self</span> <span class="pl-c">/* I am the receiver, but could be another ActorRef */</span>)
+        unsubscribe(<span class="pl-s"><span class="pl-pds">"</span>cluster-topic-with-response<span class="pl-pds">"</span></span>, <span class="pl-v">self</span> <span class="pl-c">/* I am the receiver, but could be another ActorRef */</span>)
+        unsubscribe(<span class="pl-s"><span class="pl-pds">"</span>internal-topic<span class="pl-pds">"</span></span>, <span class="pl-v">self</span> <span class="pl-c">/* I am the receiver, but could be another ActorRef */</span>)
+        <span class="pl-c">// Alternatively, you can unsubscribe from several topics in one call</span>
+        <span class="pl-c">//unsubscribeFromMany(Seq("cluster-topic","cluster-topic-with-response", "internal-topic"), self)</span>
+    }
+    <span class="pl-k">def</span> <span class="pl-en">receive</span> <span class="pl-k">=</span> {
+        <span class="pl-c">// The received message is wrapped and includes the senders information as well as the topic and actual message</span>
+        <span class="pl-k">case</span> <span class="pl-en">Message</span>(<span class="pl-s"><span class="pl-pds">"</span>cluster-topic<span class="pl-pds">"</span></span>, msg) <span class="pl-k">=&gt;</span> <span class="pl-c">// Do something with the message now</span>
+        <span class="pl-k">case</span> <span class="pl-en">Message</span>(<span class="pl-s"><span class="pl-pds">"</span>cluster-topic-with-response<span class="pl-pds">"</span></span>, msg) <span class="pl-k">=&gt;</span> sender() <span class="pl-k">!</span> <span class="pl-s"><span class="pl-pds">"</span>an answer<span class="pl-pds">"</span></span>
+    }
+}
+
+<span class="pl-c">// Define the actor and have it apply the MessageServiceAdaptor trait</span>
+<span class="pl-k">class</span> <span class="pl-en">MySenderActor</span> <span class="pl-k">extends</span> <span class="pl-e">Actor</span> <span class="pl-k">with</span> <span class="pl-e">ActorLoggingAdapter</span> <span class="pl-k">with</span> <span class="pl-e">MessagingAdapter</span> {
+    <span class="pl-k">def</span> <span class="pl-en">receive</span> <span class="pl-k">=</span> {
+        <span class="pl-k">case</span> <span class="pl-s"><span class="pl-pds">"</span>send-external-message<span class="pl-pds">"</span></span> <span class="pl-k">=&gt;</span>
+            <span class="pl-c">// We receive a hypothetical message that tells us to send off a message for a given topic</span>
+            send(<span class="pl-s"><span class="pl-pds">"</span>cluster-topic<span class="pl-pds">"</span></span>, <span class="pl-en">SomeMessage</span>(<span class="pl-s"><span class="pl-pds">"</span>somedata<span class="pl-pds">"</span></span>), <span class="pl-c1">false</span> <span class="pl-c">/* I wanted this message to not be handled locally */</span>)
+        <span class="pl-k">case</span> <span class="pl-s"><span class="pl-pds">"</span>send-external-message-with-response<span class="pl-pds">"</span></span> <span class="pl-k">=&gt;</span>
+            <span class="pl-c">// We receive a hypothetical message that tells us to send off a message for a given topic and uses a future to handle the response</span>
+            sendWithFuture(<span class="pl-s"><span class="pl-pds">"</span>cluster-topic<span class="pl-pds">"</span></span>, <span class="pl-en">SomeMessage</span>(<span class="pl-s"><span class="pl-pds">"</span>somedata<span class="pl-pds">"</span></span>), <span class="pl-c1">false</span> <span class="pl-c">/* I wanted this message to not be handled locally */</span>).onComplete {
+                <span class="pl-k">case</span> <span class="pl-en">Success</span>(answer) <span class="pl-k">=&gt;</span> <span class="pl-c">// Do something</span>
+                <span class="pl-k">case</span> <span class="pl-en">Failure</span>(fail) <span class="pl-k">=&gt;</span> <span class="pl-c">// Handle error</span>
+            }
+        <span class="pl-k">case</span> <span class="pl-s"><span class="pl-pds">"</span>send-internal-message<span class="pl-pds">"</span></span> <span class="pl-k">=&gt;</span>
+            <span class="pl-c">// We receive a hypothetical message that tells us to send off a message for a given topic</span>
+            send(<span class="pl-s"><span class="pl-pds">"</span>internal-topic<span class="pl-pds">"</span></span>, <span class="pl-en">SomeMessage</span>(<span class="pl-s"><span class="pl-pds">"</span>somedata<span class="pl-pds">"</span></span>), <span class="pl-c1">true</span> <span class="pl-c">/* I wanted this message to be handled locally */</span>)
+    }
+}
+</pre></div>
+
+<h2>
+<a id="message-subscription-events" class="anchor" href="#message-subscription-events" aria-hidden="true"><span class="octicon octicon-link"></span></a>Message Subscription Events</h2>
+
+<p>The ability to receive events for message subscription changes are also available through the trait
+<code>MessageSubscriptionEventAdapter</code>. If this trait is applied to an actor then the ability to register/unregister
+for events becomes available.</p>
+
+<div class="highlight highlight-scala"><pre>
+<span class="pl-k">import</span> <span class="pl-v">com.webtrends.communication.</span><span class="pl-v">MessageSubscriptionEventAdapter</span>
+
+<span class="pl-c">// Define the actor and apply the MessageSubscriptionEventAdapter</span>
+<span class="pl-k">class</span> <span class="pl-en">MyEventHandlerActor</span> <span class="pl-k">extends</span> <span class="pl-e">Actor</span> <span class="pl-k">with</span> <span class="pl-e">ActorLoggingAdapter</span> <span class="pl-k">with</span> <span class="pl-e">MessageSubscriptionEventAdapter</span> {
+
+    <span class="pl-k">def</span> <span class="pl-en">preStart</span><span class="pl-k">:</span> <span class="pl-k">Unit</span> <span class="pl-k">=</span> {
+        <span class="pl-c">// Register for events.This will register for add and remove events, but you can also register for a specific event (e.g. classOf[SubscriptionAddedEvent]).</span>
+        register(<span class="pl-v">self</span>, <span class="pl-c1">classOf</span>[<span class="pl-en">MessageSubscriptionEvent</span>])
+    }
+
+    <span class="pl-k">def</span> <span class="pl-en">postStop</span><span class="pl-k">:</span> <span class="pl-k">Unit</span> <span class="pl-k">=</span> {
+        <span class="pl-c">// Unregister for the events. This follows the same pattern as registered that is described above</span>
+        unregister(<span class="pl-v">self</span>, <span class="pl-c1">classOf</span>[<span class="pl-en">MessageSubscriptionEvent</span>])
+    }
+
+    <span class="pl-k">def</span> <span class="pl-en">receive</span> <span class="pl-k">=</span> {
+        <span class="pl-k">case</span> <span class="pl-en">SubscriptionAddedEvent</span>(topic, subscriber <span class="pl-c">/* ActorRef */</span>) <span class="pl-k">=&gt;</span>
+        <span class="pl-c">// An added subscription event occurred</span>
+        <span class="pl-k">case</span> <span class="pl-en">SubscriptionRemovedEvent</span>(topic, subscriber <span class="pl-c">/* ActorRef */</span>) <span class="pl-k">=&gt;</span>
+        <span class="pl-c">// A removed subscription event occurred</span>
+    }
+}
+</pre></div>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/Webtrends">Webtrends</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
