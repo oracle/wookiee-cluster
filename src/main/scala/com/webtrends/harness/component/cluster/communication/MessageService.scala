@@ -24,19 +24,19 @@ import java.util.concurrent.TimeUnit
 import akka.actor.{Actor, ActorRef, ActorSelection, ActorSystem}
 import akka.event.Logging
 import akka.pattern._
-import akka.util.Timeout
 import com.webtrends.harness.component.cluster.communication.MessageService._
 import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.Internal.{UnregisterSubscriptionEvent, RegisterSubscriptionEvent}
 import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.MessageSubscriptionEvent
 
 import scala.concurrent.Future
+import scala.concurrent.duration._
 
 /**
  * @author cuthbertm on 10/22/14 10:26 AM
  */
 private[communication] class MessageService(mediator: ActorRef)(implicit system: ActorSystem) {
 
-  private[communication] val defaultTimeout = Timeout(system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS))
+  private[communication] val defaultTimeout = system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS) milliseconds
   private val log = Logging(system, this.getClass)
 
   /**

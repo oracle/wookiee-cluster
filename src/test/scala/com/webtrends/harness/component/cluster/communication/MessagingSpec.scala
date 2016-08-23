@@ -36,7 +36,7 @@ class MessagingSpec extends TestKitSpecificationWithJUnit(ActorSystem("test",
       akka.actor.provider = "akka.actor.LocalActorRefProvider"
     """).withFallback(ConfigFactory.load))) {
 
-  implicit val timeout = Timeout(system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS))
+  implicit val timeout = system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS) milliseconds
   val messageActor = system.actorOf(MessagingActor.props(system.settings.config), Messaging.MessagingName)
 
   lazy val msgActor1 =
