@@ -70,8 +70,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   @SerialVersionUID(1L) case class Share()
   @SerialVersionUID(1L) case class InitialShareComplete()
   @SerialVersionUID(1L) case class InitialShareTimeout()
-  @SerialVersionUID(1L) case object Unreachable extends MemberStatus
-  @SerialVersionUID(1L) case object Reachable extends MemberStatus
 
   def eventStream: EventStream = context.system.eventStream
 
@@ -218,8 +216,8 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
     case CurrentClusterState(members, _, _, _, _) => updateNodeStatus(members.map {
       case m => (m.address, m.status)
     }.toSeq)
-    case UnreachableMember(member) => updateNodeStatus(Seq((member.address, Unreachable)))
-    case ReachableMember(member) => updateNodeStatus(Seq((member.address, Reachable)))
+    case UnreachableMember(member) => updateNodeRemoteStatus(member.address, availability = false)
+    case ReachableMember(member) => updateNodeRemoteStatus(member.address, availability = true)
     case m: MemberEvent => updateNodeStatus(Seq((m.member.address, m.member.status)))
     case Terminated(ref) => terminated(ref)
   }
@@ -614,40 +612,36 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   }
 
   /**
+    * Update the availability of subscriptions for a given node
+    * @param address The node to update
+    * @param availability Whether or not the node is available
+    */
+  private def updateNodeRemoteStatus(address: Address, availability: Boolean): Unit = {
+    registry(address) match {
+      case null =>
+      case r:RegistryEntry => registry += (address -> r.copy(availableRemote = availability))
+    }
+  }
+
+  /**
    * Update the availability of subscriptions for a given node
    * @param members a sequence of tuples with Address and MemberStatus.
    */
   private def updateNodeStatus(members: Seq[(Address, MemberStatus)]): Unit = {
     members foreach {
-      member =>
+      case (address, status) =>
 
-        def updateNodeRemoteStatus(entry: RegistryEntry, available: Boolean) = {
-          if (entry != null) {
-            // Update the status of the given node
-            registry += (member._1 -> entry.copy(availableRemote = available))
-          }
-        }
-
-        member._2 match {
+        status match {
           case MemberStatus.Joining => // Do nothing
 
           case MemberStatus.Up =>
             // Add the member to the list of nodes
-            nodes += member._1
-            updateNodeRemoteStatus(registry(member._1), true)
-
-          case Unreachable =>
-            // We will just update the node status so that no messages are sent to those locations, but the subscriptions are retained until the
-            // node is actually removed
-            updateNodeRemoteStatus(registry(member._1), false)
-
-          case Reachable =>
-            // The node has become reachable again so reinstate it.
-            updateNodeRemoteStatus(registry(member._1), true)
+            nodes += address
+            updateNodeRemoteStatus(address, true)
 
           case _ => // All other status are either from the node being removed or on it's way out the door
             // Remove the member from the list of nodes and registry
-            removeNode(member)
+            removeNode((address, status))
         }
     }
 
