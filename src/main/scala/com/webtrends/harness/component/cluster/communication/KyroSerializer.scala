@@ -18,9 +18,6 @@
  */
 package com.webtrends.harness.component.cluster.communication
 
-/*
- * @author vonnagyi on 12/2/13 12:46 PM
- */
 import akka.actor.ExtendedActorSystem
 import com.esotericsoftware.kryo.Kryo
 import com.twitter.chill.akka.{ActorRefSerializer, AkkaSerializer}
@@ -28,7 +25,7 @@ import com.twitter.chill.{IKryoRegistrar, ScalaKryoInstantiator, KryoInstantiato
 import de.javakaffee.kryoserializers.jodatime.JodaDateTimeSerializer
 import org.joda.time.DateTime
 
-class KryoSerializer(system: ExtendedActorSystem) extends AkkaSerializer(system) {
+case class KryoSerializer(system: ExtendedActorSystem) extends AkkaSerializer(system) {
   override def kryoInstantiator: KryoInstantiator =
     (new ScalaKryoInstantiator)
       .withRegistrar(new ActorRefSerializer(system))
@@ -36,7 +33,6 @@ class KryoSerializer(system: ExtendedActorSystem) extends AkkaSerializer(system)
 }
 
 class JodaSerializer extends JodaDateTimeSerializer with IKryoRegistrar {
-
   def apply(kryo: Kryo): Unit = {
     kryo.register(classOf[DateTime], new JodaDateTimeSerializer)
     kryo.setReferences(false)
