@@ -40,16 +40,13 @@ object ClusterSettings {
   def apply(config: Config, akkaProvider:String): ClusterSettings = {
     // If clustering is enabled then the provider must be 'ClusterActorRefProvider',
     // otherwise if not clustering then the provider must be 'ClusterActorRefProvider', otherwise it is not valid.
-    require( if(akkaProvider.equalsIgnoreCase("akka.cluster.ClusterActorRefProvider")) {
-      true
-    }
-    else if (akkaProvider.equalsIgnoreCase("akka.remote.RemoteActorRefProvider") ||
-      akkaProvider.equalsIgnoreCase("akka.actor.LocalActorRefProvider")) {
-      true
-    }
-    else {
-      false},
-        "If clustering is enabled then the provider must be 'ClusterActorRefProvider', otherwise if not clustering then the provider must be 'RemoteActorRefProvider', otherwise it is not valid." )
+    require(List("akka.cluster.ClusterActorRefProvider",
+                 "akka.remote.RemoteActorRefProvider",
+                 "akka.actor.LocalActorRefProvider").map(_.toLowerCase)
+                   .contains(akkaProvider.toLowerCase()),
+      s"If clustering is enabled then the provider must be 'ClusterActorRefProvider', " +
+        s"otherwise if not clustering then the provider must be 'RemoteActorRefProvider', " +
+        s"input [$akkaProvider] not valid.")
 
     ClusterSettings(config getString "base-path",
                     config getInt "random-seed-nodes",

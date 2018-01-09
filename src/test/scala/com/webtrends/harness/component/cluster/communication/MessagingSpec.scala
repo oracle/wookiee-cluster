@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
 import akka.actor.ActorDSL._
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
-import akka.util.Timeout
+import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
 
 @SerialVersionUID(1L) case class RequestMessage(probeRef: ActorRef)
@@ -53,13 +53,13 @@ class MessagingSpec extends TestKitSpecificationWithJUnit(ActorSystem("test",
     // Allow Messaging to start
     Thread.sleep(1000)
     "allow actors to subscribe and receive published messages" in {
-      msgActor1.underlyingActor.subscribe("senditmyway", msgActor1, true)
+      msgActor1.underlyingActor.subscribe("senditmyway", msgActor1, localOnly = true)
       msgActor1.underlyingActor.publish("senditmyway", RequestMessage(probe.ref))
       ResponseMessage("foo") must be equalTo probe.expectMsg(ResponseMessage("foo"))
     }
 
     "allow actors to subscribe and receive sent messages" in {
-      msgActor1.underlyingActor.subscribe("senditmyway", msgActor1, true)
+      msgActor1.underlyingActor.subscribe("senditmyway", msgActor1, localOnly = true)
       msgActor1.underlyingActor.send("senditmyway", RequestMessage(probe.ref))
       ResponseMessage("foo") must be equalTo probe.expectMsg(ResponseMessage("foo"))
     }

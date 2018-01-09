@@ -17,12 +17,12 @@
         <build>${build.number}</build>
         <build-artifact-name>${project.artifactId}-${project.version}</build-artifact-name>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <akka.version>2.4.9</akka.version>
+        <akka.version>2.5.4</akka.version>
         <scala.artifact.version>2.11</scala.artifact.version>
-        <scala.version>${scala.artifact.version}.7</scala.version>
+        <scala.version>${scala.artifact.version}.8</scala.version>
         <scoverage.plugin.version>1.1.1</scoverage.plugin.version>
-        <wookiee.core.version>1.2.3</wookiee.core.version>
-        <wookiee.zookeeper.version>1.2.6</wookiee.zookeeper.version>
+        <wookiee.core.version>1.3.15</wookiee.core.version>
+        <wookiee.zookeeper.version>1.3.9</wookiee.zookeeper.version>
     </properties>
 
     <groupId>com.webtrends</groupId>
@@ -167,30 +167,14 @@
             <version>0.26</version>
         </dependency>
         <dependency>
-            <groupId>org.scalatest</groupId>
-            <artifactId>scalatest_2.11</artifactId>
-            <version>2.1.3</version>
-        </dependency>
-        <dependency>
             <groupId>com.twitter</groupId>
             <artifactId>chill_${scala.artifact.version}</artifactId>
             <version>0.5.1</version>
         </dependency>
         <dependency>
-            <groupId>org.scalatest</groupId>
-            <artifactId>scalatest-maven-plugin</artifactId>
-            <version>1.0-M2</version>
-        </dependency>
-        <dependency>
             <groupId>com.twitter</groupId>
             <artifactId>chill-akka_${scala.artifact.version}</artifactId>
             <version>0.5.1</version>
-        </dependency>
-        <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-testkit_${scala.artifact.version}</artifactId>
-            <version>${akka.version}</version>
-            <scope>test</scope>
         </dependency>
         <dependency>
             <!--Used by chill when creating our own KryoInstantiator-->
