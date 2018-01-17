@@ -19,10 +19,10 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <akka.version>2.5.4</akka.version>
         <scala.artifact.version>2.11</scala.artifact.version>
-        <scala.version>${scala.artifact.version}.8</scala.version>
+        <scala.version>${scala.artifact.version}.12</scala.version>
         <scoverage.plugin.version>1.1.1</scoverage.plugin.version>
-        <wookiee.core.version>1.3.15</wookiee.core.version>
-        <wookiee.zookeeper.version>1.3.9</wookiee.zookeeper.version>
+        <wookiee.core.version>1.3.17</wookiee.core.version>
+        <wookiee.zookeeper.version>1.3.10</wookiee.zookeeper.version>
     </properties>
 
     <groupId>com.webtrends</groupId>
@@ -145,16 +145,12 @@
             <groupId>${project.groupId}</groupId>
             <artifactId>wookiee-zookeeper</artifactId>
             <version>${wookiee.zookeeper.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>net.liftweb</groupId>
-            <artifactId>lift-json_${scala.artifact.version}</artifactId>
-            <version>2.6-RC2</version>
-        </dependency>
-        <dependency>
-            <groupId>net.liftweb</groupId>
-            <artifactId>lift-json-ext_${scala.artifact.version}</artifactId>
-            <version>2.6-RC2</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-log4j12</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>com.esotericsoftware.kryo</groupId>
