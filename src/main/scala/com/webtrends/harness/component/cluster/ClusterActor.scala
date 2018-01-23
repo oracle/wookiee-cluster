@@ -22,12 +22,13 @@ import java.net.InetAddress
 
 import akka.actor._
 import akka.cluster.ClusterEvent._
-import akka.cluster.{Cluster, MemberStatus}
+import akka.cluster.MemberStatus
 import akka.remote.QuarantinedEvent
+import com.webtrends.harness.app.HActor
+import com.webtrends.harness.component.cluster.communication.MessageService
 import com.webtrends.harness.component.zookeeper.config.ZookeeperSettings
-import com.webtrends.harness.component.zookeeper.{NodeRegistration, ZookeeperEventAdapter, ZookeeperAdapter}
-import com.webtrends.harness.health.{ActorHealth, ComponentState, HealthComponent}
-import com.webtrends.harness.logging.ActorLoggingAdapter
+import com.webtrends.harness.component.zookeeper.{NodeRegistration, ZookeeperAdapter, ZookeeperEventAdapter}
+import com.webtrends.harness.health.{ComponentState, HealthComponent}
 import net.liftweb.json.parseOpt
 
 import scala.concurrent.Future
@@ -52,10 +53,7 @@ object ClusterActor {
 
 }
 
-class ClusterActor extends Actor
-    with ActorLoggingAdapter
-    with ActorHealth
-    //with MetricsAdapter
+class ClusterActor extends HActor
     with ClusterStateSerializer
     with ZookeeperAdapter
     with ZookeeperEventAdapter {
@@ -63,17 +61,13 @@ class ClusterActor extends Actor
   import com.webtrends.harness.component.cluster.ClusterActor._
   import context.dispatcher
 
-  //private val rejoinCounter = Counter("harness.cluster-service.manual-rejoin")
-  //private val autoCounter = Counter("harness.cluster-service.auto-rejoin")
+  val zookeeperSettings = ZookeeperSettings(config.getConfig("wookiee-zookeeper"))
+  val clusterSettings = ClusterSettings(config)
 
-  private val akkaProvider = context.system.settings.config.getString("akka.actor.provider")
-  val zookeeperSettings = ZookeeperSettings(context.system.settings.config.getConfig("wookiee-zookeeper"))
-  val clusterSettings = ClusterSettings(context.system.settings.config.getConfig("wookiee-cluster"), akkaProvider)
+  val leaderPath = s"${NodeRegistration.getBasePath(config)}/leader"
+  val membersPath = s"${NodeRegistration.getBasePath(config)}/nodes"
 
-  val leaderPath = s"${NodeRegistration.getBasePath(context.system.settings.config)}/leader"
-  val membersPath = s"${NodeRegistration.getBasePath(context.system.settings.config)}/nodes"
-
-  val cluster = Cluster(context.system)
+  val cluster = MessageService.getOrRegisterCluster(context.system)
   val selfAddress = cluster.selfAddress
 
   var leader = false
@@ -96,6 +90,7 @@ class ClusterActor extends Actor
     catch {
       case e: Throwable =>
         log.error("FATAL: Exception when trying to join the cluster", e)
+        throw e
     }
   }
 
@@ -126,9 +121,9 @@ class ClusterActor extends Actor
     })
   }
 
-  def receive = health orElse {
+  override def receive = health orElse {
     // ---- Internal Specific ----
-    case RejoinCluster(auto) if (cluster.state.members.filter(m => !auto || (m.address == selfAddress))).size > 0 =>
+    case RejoinCluster(auto) if cluster.state.members.exists(m => !auto || (m.address == selfAddress)) =>
       rejoinCluster(auto)
 
     // Leave the cluster
@@ -146,15 +141,15 @@ class ClusterActor extends Actor
       context become shuttingDown
       context.parent ! ClusterLeft
 
-    case MemberRemoved(member, stat) if member.address == selfAddress =>
+    case MemberRemoved(member, _) if member.address == selfAddress =>
       // If we are here then we have been removed from the cluster without going through the
-      // exiting process. This means that some catastrophic event occured which requires us to restart
+      // exiting process. This means that some catastrophic event occurred which requires us to restart
       // the actor system
       log.warn("We have been removed the cluster without our consent. We shall restart the system.")
       rejoinCluster(true)
 
     // If we have received a quarantine event and we are the leader then it might be because we have been isolated and need to restart
-    case QuarantinedEvent(address, uid) if leader && cluster.state.members.size == 1 =>
+    case QuarantinedEvent(_, _) if leader && cluster.state.members.size == 1 =>
       log.warn("We have been quarantined. We shall restart the system")
       rejoinCluster(true)
 
@@ -181,19 +176,18 @@ class ClusterActor extends Actor
   private def joinCluster: Unit = {
     // If the cluster is not terminated and we are not a current member then join
     if (!cluster.isTerminated && !cluster.state.members.exists(_.address == selfAddress)) {
-      createNode(membersPath, false, None)(clusterJoinTimeout) onComplete {
-        case Success(path) =>
-          getChildren(membersPath, true)(clusterJoinTimeout).mapTo[Seq[(String, Option[Array[Byte]])]] onComplete {
+      createNode(membersPath, ephemeral = false, None)(clusterJoinTimeout) onComplete {
+        case Success(_) =>
+          getChildren(membersPath, includeData = true)(clusterJoinTimeout).mapTo[Seq[(String, Option[Array[Byte]])]] onComplete {
             case Success(nodes) =>
               if (nodes == Nil || nodes.size == 1) {
-                log.info("Joining the cluster as self at {}", selfAddress)
+                log.info("No other nodes, joining the cluster as self at {}", selfAddress)
                 cluster.join(selfAddress)
-              }
-              else {
+              } else {
                 val host = InetAddress.getLocalHost.getCanonicalHostName
                 val protocol = selfAddress.protocol
                 val root = selfAddress.system
-                val local = s"${host}:${selfAddress.port.get}"
+                val local = s"$host:${selfAddress.port.get}"
 
                 // Get the nodes to seed with and include our self first
                 val count = if (nodes.length >= clusterSettings.randomSeedNodes) clusterSettings.randomSeedNodes else nodes.length
@@ -215,7 +209,7 @@ class ClusterActor extends Actor
                         }
                       case None => Some(node._1)
                     }
-                    if (name.isDefined)
+                    if name.isDefined
                   } yield name.get
                 }
 
@@ -224,7 +218,7 @@ class ClusterActor extends Actor
 
                 val adds = sub.map {
                   node =>
-                    val address = AddressFromURIString(s"${protocol}://${root}@${node}")
+                    val address = AddressFromURIString(s"$protocol://$root@$node")
 
                     if (address.host.get.equalsIgnoreCase(host)) {
                       // If this is this machine then the value is full qualified and we shall replace with what are akka
@@ -237,10 +231,9 @@ class ClusterActor extends Actor
                 }.toIndexedSeq
 
                 if (adds == Nil) {
-                  log.info("Joining the cluster as self at {}", selfAddress)
+                  log.info("adds == Nil, Joining the cluster as self at {}", selfAddress)
                   cluster.join(selfAddress)
-                }
-                else {
+                } else {
                   log.info(s"Joining the cluster with the seed nodes ${adds.mkString(",")}")
                   cluster.joinSeedNodes(adds)
                 }
@@ -255,7 +248,6 @@ class ClusterActor extends Actor
 
               // Send a message to the parent that we have joined the cluster
               context.parent ! ClusterJoined
-
             case Failure(e) =>
               log.error("An error occurred while trying to fetch the cluster seed nodes from Zookeeper", e)
               context.parent ! ClusterJoinFailure
@@ -265,12 +257,12 @@ class ClusterActor extends Actor
           log.error("An error occurred while trying to create the root path in Zookeeper", e)
           context.parent ! ClusterJoinFailure
       }
-    }
+    } else if (cluster.isTerminated) log.warn("Could not add node, cluster terminated...")
+    else log.warn(s"This node [$selfAddress] not in cluster members: [${cluster.state.members}], not adding")
   }
 
   /**
    * This method will force us to rejoin the cluster
-   * @param auto
    */
   private def rejoinCluster(auto: Boolean): Unit = {
     if (stateCheck.isDefined) {
@@ -310,18 +302,18 @@ class ClusterActor extends Actor
    * @param leaderOption The new leader
    */
   private def leaderChanged(leaderOption: Option[Address]): Unit = {
-    log.info("Cluster leader has changed and the new leader is this node: {}", leaderOption.exists(_ == selfAddress))
-    leader = leaderOption.exists(_ == selfAddress)
+    log.info("Cluster leader has changed and the new leader is this node: {}", leaderOption.contains(selfAddress))
+    leader = leaderOption.contains(selfAddress)
     validateCluster(maxRetries, Nil)
   }
 
   /**
-   * This method is called to validate our status within the clut
+   * This method is called to validate our status within the cluster
    */
   private def validateClusterMembership: Unit = {
 
     // The live members is the difference between all members and those that are currently unreachable
-    val live = (cluster.state.members -- cluster.state.unreachable)
+    val live = cluster.state.members -- cluster.state.unreachable
 
     // If there were previously more then one node in the cluster we need to make sure we have not
     // been stranded.
@@ -391,7 +383,7 @@ class ClusterActor extends Actor
                     if (retries <= 1) {
                       balancedCluster = false
                       log.warn("The following nodes are suspect because they are registered in Zookeeper, but are not part of the cluster: {}", newNodes.mkString(","))
-                      newNodes.foreach(n => sendRejoinMessage(AddressFromURIString(s"${selfAddress.protocol}://${selfAddress.system}@${n}")))
+                      newNodes.foreach(n => sendRejoinMessage(AddressFromURIString(s"${selfAddress.protocol}://${selfAddress.system}@$n")))
                     }
                     else {
                       balancedCluster = false
@@ -468,10 +460,8 @@ class ClusterActor extends Actor
       else {
         HealthComponent("cluster", ComponentState.NORMAL,
           s"The cluster is currently running and we are ${
-            leader match {
-              case false => "not "
-              case _ => ""
-            }
+            if (leader) ""
+            else "not "
           }the leader")
       }
     }

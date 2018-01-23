@@ -19,18 +19,18 @@
 
 package com.webtrends.harness.component.cluster.communication
 
+import java.net.{URLDecoder, URLEncoder}
+import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
+
 import akka.ConfigurationException
 import akka.actor._
 import akka.cluster.ClusterEvent._
-import akka.cluster.{MemberStatus, Cluster}
+import akka.cluster.MemberStatus
 import akka.event.EventStream
 import akka.pattern.pipe
-import java.net.{URLEncoder, URLDecoder}
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
 import com.webtrends.harness.component.cluster.communication.MessageProcessor.MessagingStarted
-import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.Internal.{UnregisterSubscriptionEvent, RegisterSubscriptionEvent}
-import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.{SubscriptionRemovedEvent, SubscriptionAddedEvent}
+import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.Internal.{RegisterSubscriptionEvent, UnregisterSubscriptionEvent}
+import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.{SubscriptionAddedEvent, SubscriptionRemovedEvent}
 import com.webtrends.harness.health.{ComponentState, HealthComponent}
 import com.webtrends.harness.logging.ActorLoggingAdapter
 import com.webtrends.harness.service.messages.CheckHealth
@@ -47,11 +47,8 @@ import scala.util.Try
  * This is the main message processor
  * User: vonnagyi
  * Date: 3/7/13
- * Time: 1:24 PM
  */
-
 object MessagingActor {
-
   def props(settings: MessagingSettings): Props =
     props(FiniteDuration(settings.ShareInterval, TimeUnit.MILLISECONDS), FiniteDuration(settings.TrashInterval, TimeUnit.MILLISECONDS))
 
@@ -73,9 +70,9 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
   def eventStream: EventStream = context.system.eventStream
 
-  val cluster = Try(Some(Cluster(context.system)))
+  val cluster = Try(Some(MessageService.getOrRegisterCluster(context.system)))
     .recoverWith({
-    case ce: ConfigurationException =>
+    case _: ConfigurationException =>
       log.warning("The config entry for ActorRefProvider is not 'ClusterActorRefProvider'. Not hooked up to any cluster")
       Try(None)
     case e: Exception =>
@@ -95,13 +92,13 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
   // The list of subscribers
   private val registry = (new ConcurrentHashMap[Address, RegistryEntry]() asScala).withDefault(a =>
-    RegistryEntry(a, VectorClock(0L, System.currentTimeMillis), true, Map.empty))
+    RegistryEntry(a, VectorClock(0L, System.currentTimeMillis), availableRemote = true, Map.empty))
 
-  registry += (selfAddress -> RegistryEntry(selfAddress, VectorClock(0L, System.currentTimeMillis), true, Map.empty))
+  registry += (selfAddress -> RegistryEntry(selfAddress, VectorClock(0L, System.currentTimeMillis), availableRemote = true, Map.empty))
 
   // The local registry of subscriptions
   private def localVersions = Map(registry.map {
-    case (address, entry) => (address -> entry.clock.counter)
+    case (address, entry) => address -> entry.clock.counter
   }.toSeq: _*)
 
   override def preStart(): Unit = {
@@ -159,20 +156,20 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   def clusterInitializing: Receive = commonProcessing orElse clusterProcessing orElse shareProcessing orElse {
     case InitialShareComplete => // The initial sharing has completed so switch to processing mode
       log.info("Initial share has been completed")
-      unstashAll()
       context.become(mainProcessing)
+      unstashAll()
       context.parent ! MessagingStarted
       shareTask = Some(context.system.scheduler.schedule(50 millisecond, shareInterval, self, Share))
 
     case InitialShareTimeout =>
       log.error("Initial share has timeout which means that there are either no other nodes in the cluster or we have not received a share")
-      unstashAll()
       context.become(mainProcessing)
+      unstashAll()
       // Continue on anyways
       context.parent ! MessagingStarted
       shareTask = Some(context.system.scheduler.schedule(50 millisecond, shareInterval, self, Share))
 
-    case msg => stash() // Stash everything else for now
+    case _ => stash() // Stash everything else for now
   }
 
 
@@ -213,9 +210,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    * @return
    */
   def clusterProcessing: Receive = {
-    case CurrentClusterState(members, _, _, _, _) => updateNodeStatus(members.map {
-      case m => (m.address, m.status)
-    }.toSeq)
+    case CurrentClusterState(members, _, _, _, _) => updateNodeStatus(members.map(m => (m.address, m.status)).toSeq)
     case UnreachableMember(member) => updateNodeRemoteStatus(member.address, availability = false)
     case ReachableMember(member) => updateNodeRemoteStatus(member.address, availability = true)
     case m: MemberEvent => updateNodeStatus(Seq((m.member.address, m.member.status)))
@@ -238,7 +233,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
         topic =>
           val set = (for {
             entry <- registry.values
-            if (entry.content.contains(topic))
+            if entry.content.contains(topic)
             sub <- entry.content(topic).subscriptions
           } yield context.actorSelection(sub.subscriber.path.toStringWithAddress(entry.address))).toSeq
 
@@ -295,7 +290,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
           // whenever an actual message is send to it
         }
 
-        publishSubscriptionEvent(true, topic, message.ref)
+        publishSubscriptionEvent(added = true, topic, message.ref)
         sender() ! SubscribeAck(message)
     }
 
@@ -316,13 +311,13 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
         // Update the registry
         lr.content.get(topic).map {
           topicEntry =>
-            val newEntry = (selfAddress -> lr.copy(
+            val newEntry = selfAddress -> lr.copy(
               clock = lr.clock.copy(counter = v, time = currentTime),
               content = lr.content.updated(topic, topicEntry.copy(
                 topic = topic,
                 clock = lr.clock.copy(counter = v, time = currentTime),
                 subscriptions = topicEntry.subscriptions.filterNot(_.subscriber == message.ref)))
-            ))
+            )
 
             // Now check to see if we have any remaining subscriptions for this topic. If not, then we
             // can remove the topic all together
@@ -346,7 +341,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
           // whenever an actual message is send to it
         }
 
-        publishSubscriptionEvent(false, topic, message.ref)
+        publishSubscriptionEvent(added = false, topic, message.ref)
         sender() ! UnsubscribeAck(message)
     }
 
@@ -357,7 +352,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
         case m => m._2.subscriptions
       }
       sub <- subs
-      if (sub.subscriber.equals(message.ref))
+      if sub.subscriber.equals(message.ref)
     } yield sub).toSet
 
     if (refs.isEmpty) {
@@ -377,7 +372,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
     val topics = (for {
       content <- registry(selfAddress).content
       sub <- content._2.subscriptions
-      if (sub.subscriber.equals(actorRef))
+      if sub.subscriber.equals(actorRef)
     } yield content._1).toSeq.distinct
 
     log.info("The actor [{}] has been terminated and it's subscriptions will be removed", actorRef.path)
@@ -401,16 +396,15 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
           subs <- entries.content.collect {
             case m if m._1.equals(message.topic) => m._2.subscriptions
           }
-          if (!subs.isEmpty)
+          if subs.nonEmpty
           sub <- subs
         } yield sub).toSet
 
         // TODO - What if no subscribers
-        if (!refs.isEmpty) {
+        if (refs.nonEmpty) {
           val childRef = context.actorOf(MessagingTopicActor.props(selfAddress, trashInterval, refs), name = encode)
           childRef forward message
-        }
-        else {
+        } else {
           log.warning("The message to the topic {} could not be pushed because there were no subscribers", message.topic)
         }
     }
@@ -422,10 +416,9 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   private def shareSubscriptions: Unit = {
     randomNode match {
       case Some(node) =>
-        log.debug("Sharing subscription information with {}", node)
+        log.trace("Sharing subscription information with {}", node)
         shareWith(node) ! Status(versions = localVersions)
-      case None =>
-        log.debug("No nodes to share subscription information")
+      case None => // No need to log here
     }
   }
 
@@ -472,8 +465,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
         if (shareTask.isEmpty) {
           self ! InitialShareComplete
         }
-      }
-      else {
+      } else {
         if (delta.nonEmpty) {
           log.debug("The subscription information for {} is newer then {} so we are sending the delta back", self.path, sourcePath)
           sender() ! Delta(delta)
@@ -547,14 +539,14 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
                 kp <- entry.content
                 sub <- kp._2.subscriptions
                 // If the topic is not in the new set or if the specific actor path is not then we know that is has been removed
-                if (!b.content.contains(kp._1) || b.content(kp._1).subscriptions.filter(_.subscriber.path == sub.subscriber.path).isEmpty)
+                if !b.content.contains(kp._1) || !b.content(kp._1).subscriptions.exists(_.subscriber.path == sub.subscriber.path)
               } yield (kp._2.topic, sub.subscriber)).toSet
 
               val adds = (for {
                 kp <- b.content
                 sub <- kp._2.subscriptions
                 // If the topic is not in the old set or if the specific actor path is not then we know that is has been added
-                if (!entry.content.contains(kp._1) || entry.content(kp._1).subscriptions.filter(_.subscriber.path == sub.subscriber.path).isEmpty)
+                if !entry.content.contains(kp._1) || !entry.content(kp._1).subscriptions.exists(_.subscriber.path == sub.subscriber.path)
               } yield (kp._2.topic, sub.subscriber)).toSet
 
               // Merge the existing subscriptions with the deltas
@@ -567,11 +559,11 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
               // These were removed
               removals foreach {
-                r => publishSubscriptionEvent(false, r._1, r._2)
+                r => publishSubscriptionEvent(added = false, r._1, r._2)
               }
               // These were added
               adds foreach {
-                r => publishSubscriptionEvent(true, r._1, r._2)
+                r => publishSubscriptionEvent(added = true, r._1, r._2)
               }
 
               log.debug("There is a difference in subscription data so the system will update using the deltas sent to it from {}: {} [remote], {} [local]",
@@ -598,11 +590,11 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
         val refs = (for {
           entry <- registry.values
-          if (entry.availableRemote) // Only allow subscriptions for nodes that are currently available
+          if entry.availableRemote // Only allow subscriptions for nodes that are currently available
           subs <- entry.content.collect {
             case m if m._1.equals(topic) => m._2.subscriptions
           }
-          if (!subs.isEmpty)
+          if subs.nonEmpty
           sub <- subs
         } yield sub).toSet
 
@@ -637,7 +629,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
           case MemberStatus.Up =>
             // Add the member to the list of nodes
             nodes += address
-            updateNodeRemoteStatus(address, true)
+            updateNodeRemoteStatus(address, availability = true)
 
           case _ => // All other status are either from the node being removed or on it's way out the door
             // Remove the member from the list of nodes and registry
@@ -651,7 +643,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
   /**
    * Remove the member from the list of nodes and registry
-   * @param member
+   * @param member Node designation
    */
   private def removeNode(member: (Address, MemberStatus)): Unit = {
     if (member._1 == selfAddress) {
@@ -663,7 +655,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       // Notify listeners of the subscription removals
       registry(member._1).content.values foreach {
         c => c.subscriptions foreach {
-          s => publishSubscriptionEvent(false, c.topic, s.subscriber)
+          s => publishSubscriptionEvent(added = false, c.topic, s.subscriber)
         }
       }
       registry -= member._1
@@ -672,18 +664,17 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   }
 
   /**
-   * Publish the subscription command for all listening on the pre-defined topic
-   * {@link com.webtrends.portfolio.communication.MessageService.MessageSubscriptionEventTopic}.
+   * Publish the subscription command for all listening on the pre-defined topic.
    * @param topic the topic that changed
    * @param subscriber the actor ref that is involved
    */
   private def publishSubscriptionEvent(added: Boolean, topic: String, subscriber: ActorRef): Unit = {
     if (added) {
-      log.debug(s"Publishing a subscription add event for the topic ${topic}")
+      log.debug(s"Publishing a subscription add event for the topic $topic")
       eventStream publish SubscriptionAddedEvent(topic, subscriber)
     }
     else {
-      log.debug(s"Publishing a subscription remove event for the topic ${topic}")
+      log.debug(s"Publishing a subscription remove event for the topic $topic")
       eventStream publish SubscriptionRemovedEvent(topic, subscriber)
     }
   }

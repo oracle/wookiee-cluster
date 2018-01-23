@@ -22,7 +22,6 @@ import com.webtrends.harness.component.Component
 import com.webtrends.harness.component.cluster.communication.Messaging
 import com.webtrends.harness.component.zookeeper.Zookeeper
 import com.webtrends.harness.component.zookeeper.config.ZookeeperSettings
-import com.webtrends.harness.utils.ConfigUtil
 
 /**
  * Important to note that if you use clustering you must not include the Zookeeper component
@@ -32,11 +31,8 @@ class ClusterManager(name:String) extends Component(name)
     with Clustering
     with Zookeeper
     with Messaging {
-
-  private val akkaProvider = context.system.settings.config.getString("akka.actor.provider")
-  implicit val clusterSettings = ClusterSettings(ConfigUtil.prepareSubConfig(config, name), akkaProvider)
-  private val zookeeperConfig = ConfigUtil.prepareSubConfig(config, "wookiee-zookeeper")
-  implicit val zookeeperSettings = ZookeeperSettings(zookeeperConfig)
+  implicit val clusterSettings = ClusterSettings(config)
+  implicit val zookeeperSettings = ZookeeperSettings(config)
 
   override protected def defaultChildName: Option[String] = Some(Messaging.MessagingName)
 

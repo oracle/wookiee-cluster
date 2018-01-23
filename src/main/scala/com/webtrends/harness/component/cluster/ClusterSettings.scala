@@ -19,6 +19,7 @@
 package com.webtrends.harness.component.cluster
 
 import com.typesafe.config.Config
+import com.webtrends.harness.component.zookeeper.ZookeeperManager
 
 case class ClusterSettings (
   basePath: String = "",
@@ -37,12 +38,18 @@ case class ClusterSettings (
 }
 
 object ClusterSettings {
-  def apply(config: Config, akkaProvider:String): ClusterSettings = {
+  def apply(rawConfig: Config): ClusterSettings = {
+    val config = rawConfig.getConfig(ClusterManager.ComponentName)
+      .withFallback(rawConfig.getConfig(ZookeeperManager.ComponentName))
+    require(rawConfig.hasPath("akka.actor.provider"),
+      "Must set akka.actor.provider to enable wookiee-cluster (e.g. akka.cluster.ClusterActorRefProvider).")
+
+    val akkaProvider = rawConfig.getString("akka.actor.provider")
     // If clustering is enabled then the provider must be 'ClusterActorRefProvider',
     // otherwise if not clustering then the provider must be 'ClusterActorRefProvider', otherwise it is not valid.
     require(List("akka.cluster.ClusterActorRefProvider",
                  "akka.remote.RemoteActorRefProvider",
-                 "akka.actor.LocalActorRefProvider").map(_.toLowerCase)
+                 "akka.actor.LocalActorRefProvider", "cluster").map(_.toLowerCase)
                    .contains(akkaProvider.toLowerCase()),
       s"If clustering is enabled then the provider must be 'ClusterActorRefProvider', " +
         s"otherwise if not clustering then the provider must be 'RemoteActorRefProvider', " +

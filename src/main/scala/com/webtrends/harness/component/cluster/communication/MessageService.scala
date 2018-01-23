@@ -22,11 +22,13 @@ package com.webtrends.harness.component.cluster.communication
 import java.util.concurrent.TimeUnit
 
 import akka.actor.{Actor, ActorRef, ActorSelection, ActorSystem}
+import akka.cluster.Cluster
 import akka.event.Logging
 import akka.pattern._
-import com.webtrends.harness.component.cluster.communication.MessageService._
-import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.Internal.{UnregisterSubscriptionEvent, RegisterSubscriptionEvent}
+import com.webtrends.harness.component.cluster.communication.MessageService.{Subscribe, Unsubscribe, GetSubscriptions, Send, Publish}
+import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.Internal.{RegisterSubscriptionEvent, UnregisterSubscriptionEvent}
 import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.MessageSubscriptionEvent
+import com.webtrends.harness.logging.LoggingAdapter
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
@@ -154,11 +156,12 @@ private[communication] class MessageService(mediator: ActorRef)(implicit system:
     mediator ! UnregisterSubscriptionEvent(registrar, to)
 }
 
-object MessageService {
+object MessageService extends LoggingAdapter {
 
   def apply()(implicit system: ActorSystem): MessageService = new MessageService(mediator.get)
 
   private var mediator: Option[ActorRef] = None
+  private var cluster: Option[Cluster] = None
 
   def registerMediator(actor: ActorRef) = {
     mediator = Some(actor)
@@ -172,6 +175,16 @@ object MessageService {
     mediator match {
       case Some(m) if m == actor => mediator = None
       case _ => //just do nothing
+    }
+  }
+
+  def getOrRegisterCluster(system: ActorSystem): Cluster = {
+    cluster synchronized {
+      if (cluster.isEmpty || !cluster.get.system.equals(system)) {
+        log.info(s"Initial Cluster Registered for System: $system")
+        cluster = Some(Cluster(system))
+      }
+      cluster.get
     }
   }
 
