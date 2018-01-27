@@ -27,13 +27,11 @@ import akka.actor._
 import akka.cluster.ClusterEvent._
 import akka.cluster.MemberStatus
 import akka.event.EventStream
-import akka.pattern.pipe
+import com.webtrends.harness.app.HActor
 import com.webtrends.harness.component.cluster.communication.MessageProcessor.MessagingStarted
 import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.Internal.{RegisterSubscriptionEvent, UnregisterSubscriptionEvent}
 import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.{SubscriptionAddedEvent, SubscriptionRemovedEvent}
 import com.webtrends.harness.health.{ComponentState, HealthComponent}
-import com.webtrends.harness.logging.ActorLoggingAdapter
-import com.webtrends.harness.service.messages.CheckHealth
 
 import scala.Predef._
 import scala.collection.JavaConverters._
@@ -56,8 +54,7 @@ object MessagingActor {
 }
 
 class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuration)
-    extends Actor
-    with ActorLoggingAdapter
+    extends HActor
     with Stash {
 
   import MessageProcessor.Internal._
@@ -140,7 +137,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   }
 
   // If clustering is enabled then we need to go through the initialization phase first
-  def receive = if (cluster.isDefined) clusterInitializing else standAloneProcessing
+  override def receive = super.receive orElse (if (cluster.isDefined) clusterInitializing else standAloneProcessing)
 
   /**
    * If we are not running with the cluster then just handle the basics
@@ -177,7 +174,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    * Once the service is initialized then this is the main processing unit
    * @return
    */
-  def mainProcessing: Receive = commonProcessing orElse clusterProcessing orElse
+  def mainProcessing: Receive = health orElse commonProcessing orElse clusterProcessing orElse
     shareProcessing orElse pubSubProcessing orElse {
 
     case InitialShareTimeout => // Ignore
@@ -240,13 +237,13 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
           map += (topic -> set)
       }
       sender() ! map
+  }
 
-    case CheckHealth =>
-      import context.dispatcher
-      log.debug("MessageProcessor health requested")
-      pipe(Future {
-        HealthComponent("processor", ComponentState.NORMAL, s"The message processor is currently running and managing ${context.children.size} topics")
-      }) to sender()
+  override def checkHealth = {
+    log.debug("MessageProcessor health requested")
+    Future.successful(
+      HealthComponent("processor", ComponentState.NORMAL, s"The message processor is currently running and managing ${context.children.size} topics")
+    )
   }
 
   /**
