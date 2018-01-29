@@ -461,7 +461,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       if (delta.isEmpty && !newer) {
         if (shareTask.isEmpty) {
           self ! InitialShareComplete
-        }
+        } else log.debug("Delta is empty, however, the shareTask has already been set")
       } else {
         if (delta.nonEmpty) {
           log.debug("The subscription information for {} is newer then {} so we are sending the delta back", self.path, sourcePath)
@@ -574,6 +574,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
       // The sharing process has completed
       if (shareTask.isEmpty) self ! InitialShareComplete
+      else log.debug("We would like to send InitialShareComplete, but shareTask is already filled.")
     }
   }
 
