@@ -86,8 +86,7 @@ class ClusterActor extends HActor
       joinCluster
       context.system.eventStream.subscribe(self, classOf[QuarantinedEvent])
       log.info("Cluster manager started: {}", context.self.path)
-    }
-    catch {
+    } catch {
       case e: Throwable =>
         log.error("FATAL: Exception when trying to join the cluster", e)
         throw e
@@ -187,7 +186,6 @@ class ClusterActor extends HActor
                 val host = InetAddress.getLocalHost.getCanonicalHostName
                 val protocol = selfAddress.protocol
                 val root = selfAddress.system
-                val local = s"$host:${selfAddress.port.get}"
 
                 // Get the nodes to seed with and include our self first
                 val count = if (nodes.length >= clusterSettings.randomSeedNodes) clusterSettings.randomSeedNodes else nodes.length
@@ -213,7 +211,7 @@ class ClusterActor extends HActor
                   } yield name.get
                 }
 
-                val sub = (Seq(local) ++ getNodes(count)).distinct.take(count)
+                val sub = getNodes(count).distinct.take(count)
                 log.info(s"Seed nodes from Zookeeper are: ${sub.mkString(",")}")
 
                 val adds = sub.map {
@@ -229,7 +227,7 @@ class ClusterActor extends HActor
                     }
                 }.toIndexedSeq
 
-                if (adds == Nil || adds.size <= 1) {
+                if (adds == Nil || adds.isEmpty) {
                   log.info("Joining the cluster as self at {}", selfAddress)
                   cluster.join(selfAddress)
                 } else {
