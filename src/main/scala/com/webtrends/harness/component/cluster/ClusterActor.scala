@@ -183,7 +183,7 @@ class ClusterActor extends HActor
                 log.info("No other nodes, joining the cluster as self at {}", selfAddress)
                 cluster.join(selfAddress)
               } else {
-                val host = InetAddress.getLocalHost.getCanonicalHostName
+                val localHost = InetAddress.getLocalHost.getCanonicalHostName
                 val protocol = selfAddress.protocol
                 val root = selfAddress.system
 
@@ -213,21 +213,12 @@ class ClusterActor extends HActor
 
                 val sub = getNodes(count).distinct.take(count)
                 log.info(s"Seed nodes from Zookeeper are: ${sub.mkString(",")}")
-
-                val adds = sub.map {
-                  node =>
-                    val address = AddressFromURIString(s"$protocol://$root@$node")
-
-                    if (address.host.get.equalsIgnoreCase(host)) {
-                      // If this is this machine then the value is full qualified and we shall replace with what are akka
-                      // settings list us as
-                      Address(protocol, root, selfAddress.host.get, address.port.get)
-                    } else {
-                      address
-                    }
+                // Exclude the local node in the seed nodes
+                val adds = sub.map(node => AddressFromURIString(s"$protocol://$root@$node")).filterNot { address =>
+                    address.host.get.equalsIgnoreCase(localHost) && address.port.contains(selfAddress.port.getOrElse(-1))
                 }.toIndexedSeq
 
-                if (adds == Nil || adds.isEmpty) {
+                if (adds.isEmpty) {
                   log.info("Joining the cluster as self at {}", selfAddress)
                   cluster.join(selfAddress)
                 } else {
