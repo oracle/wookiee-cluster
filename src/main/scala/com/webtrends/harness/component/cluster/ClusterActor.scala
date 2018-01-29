@@ -24,7 +24,7 @@ import akka.actor._
 import akka.cluster.ClusterEvent._
 import akka.cluster.MemberStatus
 import akka.remote.QuarantinedEvent
-import com.webtrends.harness.app.HActor
+import com.webtrends.harness.app.{HActor, Harness}
 import com.webtrends.harness.component.cluster.communication.MessageService
 import com.webtrends.harness.component.zookeeper.config.ZookeeperSettings
 import com.webtrends.harness.component.zookeeper.{NodeRegistration, ZookeeperAdapter, ZookeeperEventAdapter}
@@ -121,7 +121,7 @@ class ClusterActor extends HActor
     })
   }
 
-  override def receive = health orElse {
+  override def receive = super.receive orElse {
     // ---- Internal Specific ----
     case RejoinCluster(auto) if cluster.state.members.exists(m => !auto || (m.address == selfAddress)) =>
       rejoinCluster(auto)
@@ -161,7 +161,7 @@ class ClusterActor extends HActor
    * When shutting down, either by choice or forcefully, we replace the default handler with this.
    * @return
    */
-  def shuttingDown: Receive = {
+  def shuttingDown: Receive = super.receive orElse {
     // Leave the cluster
     case LeaveCluster => leaveCluster
     // If we were the node to have exited then un-subscribe from cluster events and tell our parent that we have left the cluster
@@ -224,14 +224,13 @@ class ClusterActor extends HActor
                       // If this is this machine then the value is full qualified and we shall replace with what are akka
                       // settings list us as
                       Address(protocol, root, selfAddress.host.get, address.port.get)
-                    }
-                    else {
+                    } else {
                       address
                     }
                 }.toIndexedSeq
 
-                if (adds == Nil) {
-                  log.info("adds == Nil, Joining the cluster as self at {}", selfAddress)
+                if (adds == Nil || adds.size <= 1) {
+                  log.info("Joining the cluster as self at {}", selfAddress)
                   cluster.join(selfAddress)
                 } else {
                   log.info(s"Joining the cluster with the seed nodes ${adds.mkString(",")}")
@@ -274,14 +273,7 @@ class ClusterActor extends HActor
     context become shuttingDown
 
     log.info("We have been asked to rejoin the cluster, which at this time requires us to restart the actor system")
-    if (auto) {
-      //autoCounter.incr
-    }
-    else {
-      //rejoinCounter.incr
-    }
-
-    //HarnessServiceSystem.restartActorSystem
+    Harness.restartActorSystem
   }
 
   /**
@@ -319,15 +311,15 @@ class ClusterActor extends HActor
     // been stranded.
     if ((cluster.state.members.size == 1 && cluster.state.members.head.address == selfAddress) ||
       (live.size == 1 && live.head.address == selfAddress)) {
-      log.info("Verifying the cluster since we are the only node.")
+      log.info(s"Verifying the cluster since we are the only node. Cluster members: " +
+        s"[${cluster.state.members}], Live members: [$live], Self: [$selfAddress].")
       getChildren(membersPath)(5 seconds).mapTo[Seq[(String, Option[Array[Byte]])]] onComplete {
         case Success(nodes) =>
           val clusterNodes = getActiveClusterNodes(nodes)
           if (clusterNodes == Nil || clusterNodes.size == 1) {
             // We are truly the only one so we can move on
             log.info("We are truly the only one according to Zookeeper so we can move on")
-          }
-          else {
+          } else {
             log.info(s"Cluster nodes from Zookeeper are: ${clusterNodes.mkString(",")}")
             log.warning("I have been stranded so now we will now rejoin the cluster")
             self ! RejoinCluster(true)
