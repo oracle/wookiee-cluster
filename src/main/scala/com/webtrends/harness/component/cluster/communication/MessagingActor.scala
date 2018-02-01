@@ -67,7 +67,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
   def eventStream: EventStream = context.system.eventStream
 
-  val cluster = Try(Some(MessageService.getOrRegisterCluster(context.system)))
+  lazy val cluster = Try(Some(MessageService.getOrRegisterCluster(context.system)))
     .recoverWith({
     case _: ConfigurationException =>
       log.warning("The config entry for ActorRefProvider is not 'ClusterActorRefProvider'. Not hooked up to any cluster")
@@ -77,7 +77,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       Try(None)
   }).get
 
-  val selfAddress = cluster match {
+  lazy val selfAddress = cluster match {
     case Some(clus) => clus.selfAddress
     case None => self.path.address
   }
@@ -91,8 +91,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   private val registry = (new ConcurrentHashMap[Address, RegistryEntry]() asScala).withDefault(a =>
     RegistryEntry(a, VectorClock(0L, System.currentTimeMillis), availableRemote = true, Map.empty))
 
-  registry += (selfAddress -> RegistryEntry(selfAddress, VectorClock(0L, System.currentTimeMillis), availableRemote = true, Map.empty))
-
   // The local registry of subscriptions
   private def localVersions = Map(registry.map {
     case (address, entry) => address -> entry.clock.counter
@@ -100,20 +98,20 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
   override def preStart(): Unit = {
     super.preStart()
+    registry += (selfAddress -> RegistryEntry(selfAddress, VectorClock(0L, System.currentTimeMillis), availableRemote = true, Map.empty))
 
     // Register as a handler
     MessageService.registerMediator(self)
     // Register for cluster information
     if (cluster.isDefined) {
       require(!cluster.get.isTerminated, "Cluster node must not be terminated")
-      cluster.get.subscribe(self, initialStateMode = InitialStateAsSnapshot,
-        classOf[MemberEvent], classOf[ReachabilityEvent])
+      cluster.get.subscribe(self, classOf[MemberEvent], classOf[ReachabilityEvent])
 
       // Set a timeout so that we will not be stuck if there are no other nodes to gossip with
       context.system.scheduler.scheduleOnce(15 seconds, self, InitialShareTimeout)
-    }
-    else {
-      log.info("Clustering is disabled to message handling will only operate locally")
+      log.info("Clustering enabled and initialized")
+    } else {
+      log.info("Clustering is disabled so message handling will only operate locally")
       context.parent ! MessagingStarted
     }
 
@@ -151,12 +149,13 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    * @return
    */
   def clusterInitializing: Receive = commonProcessing orElse clusterProcessing orElse shareProcessing orElse {
-    case InitialShareComplete => // The initial sharing has completed so switch to processing mode
-      log.info("Initial share has been completed")
+    case cs: CurrentClusterState => // The initial sharing has completed so switch to processing mode
+      log.info("Initial cluster state has been completed")
       context.become(mainProcessing)
       unstashAll()
       context.parent ! MessagingStarted
-      shareTask = Some(context.system.scheduler.schedule(50 millisecond, shareInterval, self, Share))
+      shareTask = Some(context.system.scheduler.schedule(50 millisecond, shareInterval, self, Share()))
+      updateNodeStatus(cs.members.map(m => (m.address, m.status)).toSeq)
 
     case InitialShareTimeout =>
       log.error("Initial share has timeout which means that there are either no other nodes in the cluster or we have not received a share")
@@ -164,7 +163,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       unstashAll()
       // Continue on anyways
       context.parent ! MessagingStarted
-      shareTask = Some(context.system.scheduler.schedule(50 millisecond, shareInterval, self, Share))
+      shareTask = Some(context.system.scheduler.schedule(50 millisecond, shareInterval, self, Share()))
 
     case _ => stash() // Stash everything else for now
   }
@@ -176,7 +175,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    */
   def mainProcessing: Receive = health orElse commonProcessing orElse clusterProcessing orElse
     shareProcessing orElse pubSubProcessing orElse {
-
+    case CurrentClusterState(members, _, _, _, _) => updateNodeStatus(members.map(m => (m.address, m.status)).toSeq)
     case InitialShareTimeout => // Ignore
     case msg => log.warning("Unknown message type received: {}", msg)
   }
@@ -197,7 +196,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    * @return
    */
   def shareProcessing: Receive = {
-    case Share => shareSubscriptions
+    case _: Share => shareSubscriptions
     case Status(remoteVersions) => verifyVersions(remoteVersions, sender.path)
     case Delta(entries) => updateDeltas(entries)
   }
@@ -207,7 +206,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    * @return
    */
   def clusterProcessing: Receive = {
-    case CurrentClusterState(members, _, _, _, _) => updateNodeStatus(members.map(m => (m.address, m.status)).toSeq)
     case UnreachableMember(member) => updateNodeRemoteStatus(member.address, availability = false)
     case ReachableMember(member) => updateNodeRemoteStatus(member.address, availability = true)
     case m: MemberEvent => updateNodeStatus(Seq((m.member.address, m.member.status)))
