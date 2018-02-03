@@ -20,11 +20,11 @@ package com.webtrends.harness.component.cluster.communication
 
 import java.util.concurrent.TimeUnit
 
-import akka.actor.ActorDSL._
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{Actor, ActorRef, ActorSystem}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
-import scala.concurrent.duration._
 import com.typesafe.config.ConfigFactory
+
+import scala.concurrent.duration._
 
 @SerialVersionUID(1L) case class RequestMessage(probeRef: ActorRef)
 
@@ -37,11 +37,10 @@ class MessagingSpec extends TestKitSpecificationWithJUnit(ActorSystem("test",
     """).withFallback(ConfigFactory.load))) {
 
   implicit val timeout = system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS) milliseconds
-  val messageActor = system.actorOf(MessagingActor.props(system.settings.config), Messaging.MessagingName)
 
   lazy val msgActor1 =
-    TestActorRef(new Act with MessagingAdapter {
-      become {
+    TestActorRef(new Actor with MessagingAdapter {
+      def receive = {
         case m: Message => m.body.asInstanceOf[RequestMessage].probeRef ! ResponseMessage("foo")
       }
     }, "test1")

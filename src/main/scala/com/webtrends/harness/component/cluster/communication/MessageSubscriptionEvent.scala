@@ -26,13 +26,11 @@ import com.webtrends.harness.component.cluster.communication.MessageSubscription
  * @author vonnagyi on 8/30/13 11:25 AM
  */
 object MessageSubscriptionEvent {
-
   /**
    * Marker interface for message domain events.
    */
   sealed trait MessageSubscriptionEvent {
     def topic: String
-
     def ref: ActorRef
   }
 
@@ -57,29 +55,4 @@ object MessageSubscriptionEvent {
     @SerialVersionUID(1L) case class UnregisterSubscriptionEvent(registrar: ActorRef, to: Class[_])
 
   }
-
-}
-
-trait MessageSubscriptionEventAdapter {
-  this: Actor =>
-
-  import context.system
-
-  lazy val msgEventService = MessageService()
-
-  /**
-   * Register for subscription events. This is not used for maintaining
-   * subscriptions, but can be used more for testing subscription events.
-   * @param registrar the actor that is to receive the events
-   * @param to the class to register for
-   */
-  def register(registrar: ActorRef, to: Class[_ <: MessageSubscriptionEvent]): Unit = msgEventService.register(registrar, to)
-
-  /**
-   * Unregister for subscription events. This is not used for maintaining
-   * subscriptions, but can be used more for testing subscription events.
-   * @param registrar the actor that is to receive the events
-   * @param to the class to register for
-   */
-  def unregister(registrar: ActorRef, to: Class[_ <: MessageSubscriptionEvent]): Unit = msgEventService.unregister(registrar, to)
 }

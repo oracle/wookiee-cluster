@@ -19,172 +19,52 @@
 
 package com.webtrends.harness.component.cluster.communication
 
-import java.util.concurrent.TimeUnit
-
-import akka.actor.{Actor, ActorRef, ActorSelection, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem}
 import akka.cluster.Cluster
-import akka.event.Logging
-import akka.pattern._
-import com.webtrends.harness.component.cluster.communication.MessageService.{Subscribe, Unsubscribe, GetSubscriptions, Send, Publish}
-import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.Internal.{RegisterSubscriptionEvent, UnregisterSubscriptionEvent}
-import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.MessageSubscriptionEvent
+import com.webtrends.harness.component.cluster.ClusterManager
 import com.webtrends.harness.logging.LoggingAdapter
 
-import scala.concurrent.Future
-import scala.concurrent.duration._
-
-/**
- * @author cuthbertm on 10/22/14 10:26 AM
- */
-private[communication] class MessageService(mediator: ActorRef)(implicit system: ActorSystem) {
-
-  private[communication] val defaultTimeout = system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS) milliseconds
-  private val log = Logging(system, this.getClass)
-
-  /**
-   * Subscribe for messages. When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * @param topic the topic to receive message from
-   * @param subscriber the actor that is to receive the messages. If this actor is terminated then
-   *                   the subscription is no longer valid and will have to be reset.
-   * @param localOnly are published messages only to come from local sources
-   * @param sender the ActorRef whom called this method and acknowledgement will be sent to.
-   */
-  def subscribe(topic: String, subscriber: ActorRef, localOnly: Boolean)
-               (implicit sender: ActorRef): Unit = {
-    mediator ! Subscribe(Seq(topic), subscriber, localOnly)
-  }
-
-  /**
-   * Subscribe for messages. When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * @param topics the topics to receive message from
-   * @param subscriber the actor that is to receive the messages. If this actor is terminated then
-   *                   the subscription is no longer valid and will have to be reset.
-   * @param localOnly are published messages only to come from local sources
-   * @param sender the ActorRef whom called this method and acknowledgement will be sent to.
-   */
-  def subscribe(topics: Seq[String], subscriber: ActorRef, localOnly: Boolean)
-               (implicit sender: ActorRef): Unit = {
-    mediator ! Subscribe(topics, subscriber, localOnly)
-  }
-
-  /**
-   * Un-subscribe to the given topic
-   * @param topic the topic to un-subscribe
-   * @param subscriber the actor to un-subscribe
-   * @param sender the ActorRef whom called this method and acknowledgement will be sent to.
-   */
-  def unsubscribe(topic: String, subscriber: ActorRef)
-                 (implicit sender: ActorRef): Unit = {
-    mediator ! Unsubscribe(Seq(topic), subscriber)
-  }
-
-  /**
-   * Un-subscribe to the given topic
-   * @param topics the topics to un-subscribe
-   * @param subscriber the actor to un-subscribe
-   * @param sender the ActorRef whom called this method and acknowledgement will be sent to.
-   */
-  def unsubscribe(topics: Seq[String], subscriber: ActorRef)
-                 (implicit sender: ActorRef): Unit = {
-    mediator ! Unsubscribe(topics, subscriber)
-  }
-
-  /**
-   * Get the subscribers for the given topics. This method should normally only be used as a reference point.
-   * @param topics the topics to look up subscribers
-   * @return a future that contains a map of topics to subscribers
-   */
-  def getSubscriptions(topics: Seq[String])(implicit timeout: akka.util.Timeout = defaultTimeout): Future[Map[String, Seq[ActorSelection]]] =
-    (mediator ? GetSubscriptions(topics)).mapTo[Map[String, Seq[ActorSelection]]]
-
-  /**
-   * Sends the message to the given topic. The message will go
-   * to one subscriber and is a one-way asynchronous message. E.g. fire-and-forget semantics.
-   * When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * @param topic the topic for the message
-   * @param msg the message to send
-   * @param sender the ActorRef to act as the sender.
-   */
-  def send(topic: String, msg: Any)
-          (implicit sender: ActorRef): Unit = {
-    (mediator ! Send(topic, Message.createMessage(topic, msg)))(sender)
-  }
-
-  /**
-   * Sends the message to the given topic. The message will go
-   * to one subscriber and a future will be returned.
-   * When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * @param topic the topic for the message
-   * @param msg the message to send
-   * @param timeout the implicit timeout
-   */
-  def sendWithFuture(topic: String, msg: Any)(implicit timeout: akka.util.Timeout = defaultTimeout): Future[Any] = {
-    mediator ? Send(topic, Message.createMessage(topic, msg))
-  }
-
-  /**
-   * Publish the message to the given topic. The message will go
-   * to all subscribers and no return is made. When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * @param topic the topic for the message
-   * @param msg the message to send
-   */
-  def publish(topic: String, msg: Any): Unit = {
-    mediator ! Publish(topic, Message.createMessage(topic, msg))
-  }
-
-  /**
-   * Register for subscription events. This is not used for maintaining
-   * subscriptions, but can be used more for testing subscription events.
-   * @param registrar the actor that is to receive the events
-   * @param to the class to register for
-   */
-  def register(registrar: ActorRef, to: Class[_ <: MessageSubscriptionEvent]): Unit =
-    mediator ! RegisterSubscriptionEvent(registrar, to)
-
-  /**
-   * Unregister for subscription events. This is not used for maintaining
-   * subscriptions, but can be used more for testing subscription events.
-   * @param registrar the actor that is to receive the events
-   * @param to the class to register for
-   */
-  def unregister(registrar: ActorRef, to: Class[_ <: MessageSubscriptionEvent]): Unit =
-    mediator ! UnregisterSubscriptionEvent(registrar, to)
-}
 
 object MessageService extends LoggingAdapter {
+  private var mediatorOption: Option[ActorRef] = None
+  private var clusterOption: Option[Cluster] = None
 
-  def apply()(implicit system: ActorSystem): MessageService = new MessageService(mediator.get)
-
-  private var mediator: Option[ActorRef] = None
-  private var cluster: Option[Cluster] = None
-
+  // Really only around for testing at this point
   def registerMediator(actor: ActorRef) = {
-    mediator = Some(actor)
-  }
-
-  def unregisterMediator = {
-    mediator = None
+    log.info(s"Registering Message Mediator: ${actor.path}")
+    mediatorOption = Some(actor)
   }
 
   def unregisterMediator(actor: ActorRef) = {
-    mediator match {
-      case Some(m) if m == actor => mediator = None
+    log.info(s"Unregistering Message Mediator: ${actor.path}")
+    mediatorOption match {
+      case Some(m) if m == actor => mediatorOption = None
       case _ => //just do nothing
     }
   }
 
-  def getOrRegisterCluster(system: ActorSystem): Cluster = {
-    cluster synchronized {
-      if (cluster.isEmpty || !cluster.get.system.equals(system)) {
-        log.info(s"Initial Cluster Registered for System: $system")
-        cluster = Some(Cluster(system))
+  def getOrInitMediator(system: ActorSystem): ActorRef = {
+    if (mediatorOption.nonEmpty) return mediatorOption.get
+    mediatorOption synchronized {
+      if (mediatorOption.isEmpty) {
+        mediatorOption = Some(system.actorOf(
+          MessagingActor.props(MessagingSettings(system.settings.config)),
+          ClusterManager.MessagingName))
+        log.info(s"Initial Messaging Mediator, [${mediatorOption.get}], " +
+          s"Registered for System: $system")
       }
-      cluster.get
+      mediatorOption.get
+    }
+  }
+
+  def getOrRegisterCluster(system: ActorSystem): Cluster = {
+    if (clusterOption.nonEmpty && clusterOption.get.system.equals(system)) return clusterOption.get
+    clusterOption synchronized {
+      if (clusterOption.isEmpty || !clusterOption.get.system.equals(system)) {
+        log.info(s"Initial Cluster Registered for System: $system")
+        clusterOption = Some(Cluster(system))
+      }
+      clusterOption.get
     }
   }
 
@@ -254,106 +134,4 @@ object MessageService extends LoggingAdapter {
    */
   @SerialVersionUID(1L) case class Send(val topic: String, msg: Message) extends MessageCommand
 
-}
-
-trait MessagingAdapter {
-  this: Actor =>
-
-  import context.system
-
-  private lazy val messageService = MessageService()
-
-  /**
-   * Subscribe for messages. When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * A SubscribeAck message will be sent to the caller of this method to acknowledge the
-   * addition of the subscription.
-   * @param topic the topic to receive message from
-   * @param subscriber the actor that is to receive the messages. If this actor is terminated then
-   *                   the subscription is no longer valid and will have to be reset.
-   * @param localOnly are published messages only to come from local sources
-   */
-  def subscribe(topic: String, subscriber: ActorRef = self, localOnly: Boolean = false): Unit = {
-    messageService.subscribe(topic, subscriber, localOnly)(self)
-  }
-
-  /**
-   * Subscribe for messages. When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * A SubscribeAck message will be sent to the caller of this method to acknowledge the
-   * addition of the subscription.
-   * @param topics the topics to receive message from
-   * @param subscriber the actor that is to receive the messages. If this actor is terminated then
-   *                   the subscription is no longer valid and will have to be reset.
-   * @param localOnly are published messages only to come from local sources
-   */
-  def subscribeToMany(topics: Seq[String], subscriber: ActorRef = self, localOnly: Boolean = false): Unit = {
-    messageService.subscribe(topics, subscriber, localOnly)(self)
-  }
-
-  /**
-   * Un-subscribe to the given topic.
-   * An UnsubscribeAck message will be sent to the caller of this method to acknowledge the
-   * addition of the subscription.
-   * @param topic the topic to un-subscribe
-   * @param subscriber the actor to un-subscribe
-   */
-  def unsubscribe(topic: String, subscriber: ActorRef = self): Unit = {
-    messageService.unsubscribe(topic, subscriber)(self)
-  }
-
-  /**
-   * Un-subscribe to the given topic.
-   * An UnsubscribeAck message will be sent to the caller of this method to acknowledge the
-   * addition of the subscription.
-   * @param topics the topic to un-subscribe
-   * @param subscriber the actor to un-subscribe
-   */
-  def unsubscribeFromMany(topics: Seq[String], subscriber: ActorRef = self): Unit = {
-    messageService.unsubscribe(topics, subscriber)(self)
-  }
-
-  /**
-   * Get the subscribers for the given topics. This method should normally only be used as a reference point.
-   * @param topics the topics to look up subscribers
-   * @return a future that contains a map of topics to subscribers
-   */
-  def getSubscriptions(topics: Seq[String]): Future[Map[String, Seq[ActorSelection]]] = messageService.getSubscriptions(topics)
-
-  /**
-   * Sends the message to the given topic. The message will go
-   * to one subscriber and is a one-way asynchronous message. E.g. fire-and-forget semantics.
-   * When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * @param topic the topic for the message
-   * @param msg the message to send
-   * @param sender the implicit ActorRef to act as the sender and will default to self
-   */
-  def send(topic: String, msg: Any)(implicit sender: ActorRef = context.self): Unit = {
-    messageService.send(topic, msg)(sender)
-  }
-
-  /**
-   * Sends the message to the given topic. The message will go
-   * to one subscriber and a future will be returned.
-   * When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * @param topic the topic for the message
-   * @param msg the message to send
-   * @param timeout the implicit timeout
-   */
-  def sendWithFuture(topic: String, msg: Any)(implicit timeout: akka.util.Timeout): Future[Any] = {
-    messageService.sendWithFuture(topic, msg)(timeout)
-  }
-
-  /**
-   * Publish the message to the given topic. The message will go
-   * to all subscribers and no return is made. When receiving a message, it will be wrapped in an instance
-   * of {@link com.webtrends.harness.logging.communication.MessageEvent}.
-   * @param topic the topic for the message
-   * @param msg the message to send
-   */
-  def publish(topic: String, msg: Any): Unit = {
-    messageService.publish(topic, msg)
-  }
 }
