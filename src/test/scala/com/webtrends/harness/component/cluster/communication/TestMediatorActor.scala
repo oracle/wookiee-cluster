@@ -18,8 +18,8 @@
  */
 package com.webtrends.harness.component.cluster.communication
 
-import akka.actor.ActorDSL._
 import akka.actor._
+import akka.testkit.TestActorRef
 import com.webtrends.harness.component.cluster.communication.MessageService._
 import com.webtrends.harness.logging.ActorLoggingAdapter
 
@@ -28,16 +28,18 @@ object TestMediatorActor {
 }
 
 class TestMediatorActor extends Actor with ActorLoggingAdapter {
-  val mediator = actor(context, "mediator")(new Act {
+  import context.system
+
+  val mediator = TestActorRef(new Actor {
     var map = Map[String, ActorRef]()
-    become {
+    def receive = {
       case s: Subscribe => s.topics foreach {
         topic => map += (topic -> s.ref)
-      };
+      }
         sender() ! SubscribeAck(s)
       case u: Unsubscribe => u.topics foreach {
         topic => map -= topic
-      };
+      }
         sender() ! UnsubscribeAck(u)
       case Publish(topic, msg) => if (map.contains(topic)) map(topic) forward msg
       case s: Send => if (map.contains(s.topic)) map(s.topic) forward s.msg
@@ -48,5 +50,9 @@ class TestMediatorActor extends Actor with ActorLoggingAdapter {
 
   def receive = {
     case x => log.info("Received {}", x.toString)
+  }
+
+  override def postStop() = {
+    MessageService.unregisterMediator(mediator)
   }
 }

@@ -2,7 +2,7 @@ package com.webtrends.harness.component.cluster.communication
 
 import akka.actor.{ActorRef, ActorSystem, Address, PoisonPill, Props}
 import akka.cluster.Cluster
-import akka.testkit.TestProbe
+import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
 import com.webtrends.harness.component.cluster.ClusterActor
 import com.webtrends.harness.component.cluster.ClusterActor.GetClusterState
@@ -62,9 +62,9 @@ class ClusterActorSpec extends SpecificationWithJUnit {
 
   step {
     clusterActor ! PoisonPill
-    system.terminate() onSuccess { case _ =>
-      zkServer.stop()
-    }
+    TestKit.shutdownActorSystem(system)
+
+    zkServer.stop()
   }
 
   def setLogLevel(level: ch.qos.logback.classic.Level = ch.qos.logback.classic.Level.INFO) = {

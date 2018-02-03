@@ -29,11 +29,14 @@ object MessageService extends LoggingAdapter {
   private var mediatorOption: Option[ActorRef] = None
   private var clusterOption: Option[Cluster] = None
 
+  // Really only around for testing at this point
   def registerMediator(actor: ActorRef) = {
+    log.info(s"Registering Message Mediator: ${actor.path}")
     mediatorOption = Some(actor)
   }
 
   def unregisterMediator(actor: ActorRef) = {
+    log.info(s"Unregistering Message Mediator: ${actor.path}")
     mediatorOption match {
       case Some(m) if m == actor => mediatorOption = None
       case _ => //just do nothing

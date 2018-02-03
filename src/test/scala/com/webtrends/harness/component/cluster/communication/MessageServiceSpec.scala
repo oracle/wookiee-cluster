@@ -49,7 +49,7 @@ class MessageServiceSpec
   "The message service adaptor" should {
 
     "allow actors to subscribe and receive events" in {
-      msgActor.underlyingActor.subscribe("test", probe.ref, true)
+      msgActor.underlyingActor.subscribe("test", probe.ref, localOnly = true)
       msgActor.underlyingActor.publish("test", "ping")
       probe.expectMsgClass(classOf[Message])
       success
