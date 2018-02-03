@@ -100,8 +100,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
     super.preStart()
     registry += (selfAddress -> RegistryEntry(selfAddress, VectorClock(0L, System.currentTimeMillis), availableRemote = true, Map.empty))
 
-    // Register as a handler
-    MessageService.registerMediator(self)
     // Register for cluster information
     if (cluster.isDefined) {
       require(!cluster.get.isTerminated, "Cluster node must not be terminated")

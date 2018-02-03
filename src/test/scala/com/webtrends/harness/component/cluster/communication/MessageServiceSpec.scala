@@ -21,7 +21,6 @@ package com.webtrends.harness.component.cluster.communication
 import akka.actor.{Actor, ActorSystem}
 import akka.testkit.{TestActorRef, TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
-import com.webtrends.harness.component.cluster.communication.MessageService.{SubscribeAck, UnsubscribeAck}
 import org.specs2.time.NoTimeConversions
 
 import scala.concurrent.Await
@@ -33,8 +32,8 @@ class MessageServiceSpec
   lazy val msgActor = TestActorRef(
     new Actor with MessagingAdapter {
       def receive = {
-        case Message(topic, "ping") => sender() ! "pong"
-        case Message(topic, "future-ping") => sender() ! "pong"
+        case Message(_, "ping") => sender() ! "pong"
+        case Message(_, "future-ping") => sender() ! "pong"
       }
     }, "test")
 
@@ -43,52 +42,9 @@ class MessageServiceSpec
 
   probe.send(systemActor, "test")
   implicit val sender = probe.ref
-  lazy val service = MessageService()
-
-  Thread.sleep(2000)
   
   // Run these tests sequentially so that the probes don't bump into the same subscriptions
   sequential
-
-  "The message service" should {
-
-    "allow actors to subscribe and receive published messages" in {
-      service.subscribe("senditmyway", probe.ref, true)
-      probe.expectMsgClass(classOf[SubscribeAck])
-      service.publish("senditmyway", "ping")
-      probe.expectMsgClass(classOf[Message])
-      success
-    }
-
-    "allow actors to subscribe and receive sent messages" in {
-      service.subscribe("senditmyway", probe.ref, true)
-      probe.expectMsgClass(classOf[SubscribeAck])
-      service.send("senditmyway", "ping")
-      probe.expectMsgClass(classOf[Message])
-      success
-    }
-
-    "allow actors to not received messages when not registered for specific message type" in {
-      service.subscribe("senditmyway", probe.ref, true)
-      probe.expectMsgClass(classOf[SubscribeAck])
-      service.publish("dontsenditmyway", "ping")
-      probe.expectNoMsg()
-      success
-    }
-
-    "allow actors to subscribe and then un-subscribe" in {
-      service.subscribe("senditmyway", probe.ref, true)
-      probe.expectMsgClass(classOf[SubscribeAck])
-      service.publish("senditmyway", "ping")
-      probe.expectMsgClass(classOf[Message])
-
-      service.unsubscribe("senditmyway", probe.ref)
-      probe.expectMsgClass(classOf[UnsubscribeAck])
-      service.publish("senditmyway", "ping")
-      probe.expectNoMsg()
-      success
-    }
-  }
 
   "The message service adaptor" should {
 

@@ -19,7 +19,7 @@
 package com.webtrends.harness.component.cluster
 
 import com.webtrends.harness.component.Component
-import com.webtrends.harness.component.cluster.communication.Messaging
+import com.webtrends.harness.component.cluster.communication.{MessageService, MessagingAdapter}
 import com.webtrends.harness.component.zookeeper.Zookeeper
 import com.webtrends.harness.component.zookeeper.config.ZookeeperSettings
 
@@ -29,17 +29,17 @@ import com.webtrends.harness.component.zookeeper.config.ZookeeperSettings
  */
 class ClusterManager(name:String) extends Component(name)
     with Clustering
-    with Zookeeper
-    with Messaging {
+    with MessagingAdapter
+    with Zookeeper {
+  MessageService.getOrInitMediator(system)
   implicit val clusterSettings = ClusterSettings(config)
   implicit val zookeeperSettings = ZookeeperSettings(config)
 
-  override protected def defaultChildName: Option[String] = Some(Messaging.MessagingName)
+  override protected def defaultChildName: Option[String] = Some(ClusterManager.MessagingName)
 
   override def start = {
     startZookeeper(true)
     startClustering
-    startMessaging
     super.start
   }
 
@@ -47,8 +47,13 @@ class ClusterManager(name:String) extends Component(name)
     super.stop
     stopClustering
   }
+
+  override protected def getHealthChildren = {
+    super.getHealthChildren.toSet + MessageService.getOrInitMediator(system)
+  }
 }
 
 object ClusterManager {
   val ComponentName = "wookiee-cluster"
+  val MessagingName = "messaging"
 }
