@@ -42,7 +42,7 @@ class ClusterActorSpec extends SpecificationWithJUnit {
       akka.actor.provider = "cluster"
     """)
     system = ActorSystem.create("ClusterActorSpec", config)
-    zkService = MockZookeeper(ZookeeperSettings(config.getConfig("wookiee-zookeeper")), clusterEnabled = true)
+    zkService = MockZookeeper(ZookeeperSettings(config), clusterEnabled = true)
 
     Await.result(zkService.createNode("/test/Lab_Dummy/1.1/nodes/10.20.30.40:2552",
       ephemeral = true, None), 5 seconds)

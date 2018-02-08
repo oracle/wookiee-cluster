@@ -61,7 +61,7 @@ class ClusterActor extends HActor
   import com.webtrends.harness.component.cluster.ClusterActor._
   import context.dispatcher
 
-  val zookeeperSettings = ZookeeperSettings(config.getConfig("wookiee-zookeeper"))
+  val zookeeperSettings = ZookeeperSettings(config)
   val clusterSettings = ClusterSettings(config)
 
   val leaderPath = s"${NodeRegistration.getBasePath(config)}/leader"

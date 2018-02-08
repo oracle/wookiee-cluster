@@ -62,6 +62,8 @@ with ActorLoggingAdapter {
   override def preStart: Unit = {
     // Take the seed subscriptions and set them up
     updateSubscriptions(seed)
+    log.info(s"Message Topic Actor Started for self address: [$selfAddress], " +
+      s"subscriptions: [${seed.mkString(",")}]")
   }
 
   override def postStop(): Unit = {
@@ -71,32 +73,33 @@ with ActorLoggingAdapter {
 
   def receive = {
     case UpdateSubscriptions(subscriptions) => updateSubscriptions(subscriptions)
-    case message@Subscribe(_, ref, localOnly) => subscribe(ref, localOnly)
-    case message@Unsubscribe(_, ref) => unsubscribe(ref, false)
-    case Terminated(ref) => unsubscribe(ref, true)
+    case Subscribe(_, ref, localOnly) => subscribe(ref, localOnly)
+    case Unsubscribe(_, ref) => unsubscribe(ref, terminated = false)
+    case Terminated(ref) => unsubscribe(ref, terminated = true)
     case Publish(_, message) => publish(message)
     case Send(_, message) => send(message)
     case Sweep if trashDeadline.isDefined && trashDeadline.get.isOverdue =>
-      log.debug("The actor [{}] is stopping because there are no more subscriptions and it was scheduled for deletion", self.path)
+      log.debug("The actor [{}] is stopping because there are no more subscriptions " +
+        "and it was scheduled for deletion", self.path)
       context stop self
 
   }
 
   /**
    * Bulk update the subscriptions
-   * @param subscriptions
    */
   private def updateSubscriptions(subscriptions: Set[Subscription]): Unit = {
-    log.info("The actor [{}] is updating it's subscriptions: {}", self.path, subscriptions.map(_.subscriber.path).mkString(","))
+    log.info("The actor [{}] is updating it's subscriptions: {}",
+      self.path, subscriptions.map(_.subscriber.path).mkString(","))
 
     // Unwatch all of the entries that are not in the passed in set
-    val removals = registry.map(_._1).toSet &~ subscriptions.map(_.subscriber)
+    val removals = registry.keySet &~ subscriptions.map(_.subscriber)
     removals foreach { sub =>
       context unwatch sub
     }
 
     // Copy the subscriptions
-    registry = subscriptions.map(e => (e.subscriber -> e.localOnly)).toMap
+    registry = subscriptions.map(e => e.subscriber -> e.localOnly).toMap
     if (registry.isEmpty) {
       // If we have no more subscriptions then schedule the removal of this actor
       trashDeadline = Some(Deadline.now + trashInterval)
@@ -112,7 +115,6 @@ with ActorLoggingAdapter {
   /**
    * Add the subscription
    * @param ref the actor to subscribe
-   * @param localOnly
    */
   private def subscribe(ref: ActorRef, localOnly: Boolean): Unit = {
     if (!registry.contains(ref)) {
@@ -148,13 +150,12 @@ with ActorLoggingAdapter {
 
   /**
    * Forward the message to all subscribers
-   * @param message
    */
   private def publish(message: Any): Unit = {
     for {
       subscription <- registry
       // Only send the message to internal actors or external ones that are registered for external publishes
-      if (subscription._1.path.address.host.isEmpty || subscription._1.path.address == selfAddress || !subscription._2)
+      if subscription._1.path.address.host.isEmpty || subscription._1.path.address == selfAddress || !subscription._2
     } {
       log.debug("Publishing message for '{}' to {}", topic, subscription._1.path)
       subscription._1 forward message
