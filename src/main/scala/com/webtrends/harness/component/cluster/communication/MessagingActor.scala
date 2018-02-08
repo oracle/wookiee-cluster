@@ -253,26 +253,29 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
     val newClock = VectorClock(v, currentTime)
     val sub = Subscription(message.ref, message.localOnly)
 
+    val content = message.topics.foldLeft[Map[String, TopicEntry]](lr.content)({ case (cMap, topic) =>
+      cMap.get(topic) match {
+        case Some(topicEntry) =>
+          val newEntry = TopicEntry(topic,
+            newClock,
+            topicEntry.subscriptions ++ List(sub))
+          cMap.updated(topic, newEntry)
+        case None =>
+          cMap + (topic -> TopicEntry(topic, newClock, Set(sub)))
+      }
+    })
+
+    val newLr = registry(selfAddress).copy(
+      address = selfAddress,
+      clock = lr.clock.copy(counter = v, time = currentTime),
+      availableRemote = true,
+      content = content
+    )
+
+    registry += (selfAddress -> newLr)
+
     message.topics foreach {
       topic =>
-        val newLr = registry(selfAddress).copy(
-          address = selfAddress,
-          clock = lr.clock.copy(counter = v, time = currentTime),
-          availableRemote = true,
-          content = lr.content.get(topic).map {
-            topicEntry =>
-              val newEntry = TopicEntry(
-                topic,
-                newClock,
-                topicEntry.subscriptions ++ List(sub))
-              lr.content.updated(topic, newEntry)
-          }.getOrElse {
-            lr.content + (topic -> TopicEntry(topic, newClock, Set(sub)))
-          }
-        )
-
-        registry += (selfAddress -> newLr)
-
         log.info("The actor [{}] is subscribing to the topic {}", message.ref.path, topic)
         // Make sure we have a topic actor
         val encode = URLEncoder.encode(topic, "utf-8")
@@ -384,14 +387,11 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       case Some(g) => g forward message
       case None =>
         // If there is no topic actor then we need to "seed" it and then forward the message
-        val refs = (for {
-          entries <- registry.values
-          subs <- entries.content.collect {
+        val refs = registry.values.flatMap { entries =>
+          entries.content.collect {
             case m if m._1.equals(message.topic) => m._2.subscriptions
-          }
-          if subs.nonEmpty
-          sub <- subs
-        } yield sub).toSet
+          } flatten
+        } toSet
 
         // TODO - What if no subscribers
         if (refs.nonEmpty) {
@@ -618,10 +618,15 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       case (address, status) =>
 
         status match {
-          case MemberStatus.Joining => // Do nothing
+          case MemberStatus.Joining =>
+            // Add the member to the list of nodes
+            log.info(s"Member Joining: $address, won't come Up until akka.cluster.role is satisfied")
+            //nodes += address
+            //updateNodeRemoteStatus(address, availability = true)
 
           case MemberStatus.Up =>
             // Add the member to the list of nodes
+            log.info(s"Member Up: $address")
             nodes += address
             updateNodeRemoteStatus(address, availability = true)
 
@@ -643,8 +648,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
     if (member._1 == selfAddress) {
       // If we are asked to be removed then just shut ourself down
       context stop self
-    }
-    else {
+    } else {
       nodes -= member._1
       // Notify listeners of the subscription removals
       registry(member._1).content.values foreach {
@@ -666,8 +670,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
     if (added) {
       log.debug(s"Publishing a subscription add event for the topic $topic")
       eventStream publish SubscriptionAddedEvent(topic, subscriber)
-    }
-    else {
+    } else {
       log.debug(s"Publishing a subscription remove event for the topic $topic")
       eventStream publish SubscriptionRemovedEvent(topic, subscriber)
     }

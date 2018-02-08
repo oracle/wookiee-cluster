@@ -92,7 +92,7 @@ object MessageService extends LoggingAdapter {
    *            the subscription is no longer valid and will have to be reset.
    * @param localOnly are published messages only to come from local sources
    */
-  @SerialVersionUID(1L) case class Subscribe(val topics: Seq[String], ref: ActorRef, localOnly: Boolean) extends MessageSubscriptionCommand
+  @SerialVersionUID(1L) case class Subscribe(topics: Seq[String], ref: ActorRef, localOnly: Boolean) extends MessageSubscriptionCommand
 
   /**
    * Acknowledgement of the subscription
@@ -105,7 +105,7 @@ object MessageService extends LoggingAdapter {
    * @param topics the topics to un-subscribe
    * @param ref the actor to un-subscribe
    */
-  @SerialVersionUID(1L) case class Unsubscribe(val topics: Seq[String], ref: ActorRef) extends MessageSubscriptionCommand
+  @SerialVersionUID(1L) case class Unsubscribe(topics: Seq[String], ref: ActorRef) extends MessageSubscriptionCommand
 
   /**
    * Acknowledgement of the un-subscription
@@ -117,14 +117,14 @@ object MessageService extends LoggingAdapter {
    * Get a map of subscribers for the given topic. This method should normally only be used as a reference point.
    * @param topics the topics to look up subscribers
    */
-  @SerialVersionUID(1L) case class GetSubscriptions(val topics: Seq[String]) extends MessageSubscriptionCommand
+  @SerialVersionUID(1L) case class GetSubscriptions(topics: Seq[String]) extends MessageSubscriptionCommand
 
   /**
    * Publish a message to the given topic
    * @param topic the topic to send the message to
    * @param msg the message to send
    */
-  @SerialVersionUID(1L) case class Publish(val topic: String, msg: Message) extends MessageCommand
+  @SerialVersionUID(1L) case class Publish(topic: String, msg: Message) extends MessageCommand
 
   /**
    * Send a message to the given topic. The message will only be sent to one
@@ -132,6 +132,6 @@ object MessageService extends LoggingAdapter {
    * @param topic the topic to send the message to
    * @param msg the message to send
    */
-  @SerialVersionUID(1L) case class Send(val topic: String, msg: Message) extends MessageCommand
+  @SerialVersionUID(1L) case class Send(topic: String, msg: Message) extends MessageCommand
 
 }

@@ -12,11 +12,9 @@ import scala.concurrent.duration._
 
 trait MessagingAdapter {
   this: Actor =>
-
-  import context.system
   import MessageService._
 
-  private[communication] val defaultTimeout = system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS) milliseconds
+  private[communication] lazy val defaultTimeout = context.system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS) milliseconds
 
   /**
     * Subscribe for messages. When receiving a message, it will be wrapped in an instance
@@ -29,7 +27,7 @@ trait MessagingAdapter {
     * @param localOnly are published messages only to come from local sources
     */
   def subscribe(topic: String, subscriber: ActorRef = self, localOnly: Boolean = false): Unit = {
-    getOrInitMediator(system).tell(Subscribe(Seq(topic), subscriber, localOnly), self)
+    getOrInitMediator(context.system).tell(Subscribe(Seq(topic), subscriber, localOnly), self)
   }
 
   /**
@@ -43,7 +41,7 @@ trait MessagingAdapter {
     * @param localOnly are published messages only to come from local sources
     */
   def subscribeToMany(topics: Seq[String], subscriber: ActorRef = self, localOnly: Boolean = false): Unit = {
-    getOrInitMediator(system).tell(Subscribe(topics, subscriber, localOnly), self)
+    getOrInitMediator(context.system).tell(Subscribe(topics, subscriber, localOnly), self)
   }
 
   /**
@@ -54,7 +52,7 @@ trait MessagingAdapter {
     * @param subscriber the actor to un-subscribe
     */
   def unsubscribe(topic: String, subscriber: ActorRef = self): Unit = {
-    getOrInitMediator(system).tell(Unsubscribe(Seq(topic), subscriber), self)
+    getOrInitMediator(context.system).tell(Unsubscribe(Seq(topic), subscriber), self)
   }
 
   /**
@@ -65,7 +63,7 @@ trait MessagingAdapter {
     * @param subscriber the actor to un-subscribe
     */
   def unsubscribeFromMany(topics: Seq[String], subscriber: ActorRef = self): Unit = {
-    getOrInitMediator(system).tell(Unsubscribe(topics, subscriber), self)
+    getOrInitMediator(context.system).tell(Unsubscribe(topics, subscriber), self)
   }
 
   /**
@@ -74,7 +72,7 @@ trait MessagingAdapter {
     * @return a future that contains a map of topics to subscribers
     */
   def getSubscriptions(topics: Seq[String])(implicit timeout: akka.util.Timeout = defaultTimeout): Future[Map[String, Seq[ActorSelection]]] =
-    getOrInitMediator(system).ask(GetSubscriptions(topics), self).mapTo[Map[String, Seq[ActorSelection]]]
+    getOrInitMediator(context.system).ask(GetSubscriptions(topics))(timeout, self).mapTo[Map[String, Seq[ActorSelection]]]
 
   /**
     * Sends the message to the given topic. The message will go
@@ -86,7 +84,7 @@ trait MessagingAdapter {
     * @param sender the implicit ActorRef to act as the sender and will default to self
     */
   def send(topic: String, msg: Any)(implicit sender: ActorRef = context.self): Unit = {
-    getOrInitMediator(system).tell(Send(topic, Message.createMessage(topic, msg)), sender)
+    getOrInitMediator(context.system).tell(Send(topic, Message.createMessage(topic, msg)), sender)
   }
 
   /**
@@ -99,7 +97,7 @@ trait MessagingAdapter {
     * @param timeout the implicit timeout
     */
   def sendWithFuture(topic: String, msg: Any)(implicit timeout: akka.util.Timeout): Future[Any] = {
-    getOrInitMediator(system).ask(Send(topic, Message.createMessage(topic, msg)))(timeout)
+    getOrInitMediator(context.system).ask(Send(topic, Message.createMessage(topic, msg)))(timeout, self)
   }
 
   /**
@@ -110,7 +108,7 @@ trait MessagingAdapter {
     * @param msg the message to send
     */
   def publish(topic: String, msg: Any): Unit = {
-    getOrInitMediator(system).tell(Publish(topic, Message.createMessage(topic, msg)), self)
+    getOrInitMediator(context.system).tell(Publish(topic, Message.createMessage(topic, msg)), self)
   }
 
   /**
@@ -120,7 +118,7 @@ trait MessagingAdapter {
     * @param to the class to register for
     */
   def register(registrar: ActorRef, to: Class[_ <: MessageSubscriptionEvent]): Unit =
-    getOrInitMediator(system).tell(RegisterSubscriptionEvent(registrar, to), self)
+    getOrInitMediator(context.system).tell(RegisterSubscriptionEvent(registrar, to), self)
 
   /**
     * Unregister for subscription events. This is not used for maintaining
@@ -129,5 +127,5 @@ trait MessagingAdapter {
     * @param to the class to register for
     */
   def unregister(registrar: ActorRef, to: Class[_ <: MessageSubscriptionEvent]): Unit =
-    getOrInitMediator(system).tell(UnregisterSubscriptionEvent(registrar, to), self)
+    getOrInitMediator(context.system).tell(UnregisterSubscriptionEvent(registrar, to), self)
 }

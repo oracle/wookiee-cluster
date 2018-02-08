@@ -33,7 +33,6 @@ class ClusterManager(name:String) extends Component(name)
     with Zookeeper {
   MessageService.getOrInitMediator(system)
   implicit val clusterSettings = ClusterSettings(config)
-  implicit val zookeeperSettings = ZookeeperSettings(config)
 
   override protected def defaultChildName: Option[String] = Some(ClusterManager.MessagingName)
 
