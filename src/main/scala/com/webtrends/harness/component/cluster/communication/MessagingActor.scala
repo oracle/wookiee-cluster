@@ -122,8 +122,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       shareTask.get.cancel()
     }
 
-    // Un-register as a handler
-    MessageService.unregisterMediator(self)
     if (cluster.isDefined && !cluster.get.isTerminated) {
       // Un-register for cluster information
       cluster.get unsubscribe self
