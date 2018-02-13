@@ -51,4 +51,8 @@ class TestMediatorActor extends Actor with ActorLoggingAdapter {
   def receive = {
     case x => log.info("Received {}", x.toString)
   }
+
+  override def postStop() = {
+    MessageService.unregisterMediator(mediator)
+  }
 }
