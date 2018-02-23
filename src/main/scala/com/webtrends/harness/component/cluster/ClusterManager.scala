@@ -21,7 +21,6 @@ package com.webtrends.harness.component.cluster
 import com.webtrends.harness.component.Component
 import com.webtrends.harness.component.cluster.communication.{MessageService, MessagingAdapter}
 import com.webtrends.harness.component.zookeeper.Zookeeper
-import com.webtrends.harness.component.zookeeper.config.ZookeeperSettings
 
 /**
  * Important to note that if you use clustering you must not include the Zookeeper component
@@ -37,7 +36,7 @@ class ClusterManager(name:String) extends Component(name)
   override protected def defaultChildName: Option[String] = Some(ClusterManager.MessagingName)
 
   override def start = {
-    startZookeeper(true)
+    startZookeeper()
     startClustering
     super.start
   }

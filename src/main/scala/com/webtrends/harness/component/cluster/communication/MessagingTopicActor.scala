@@ -82,7 +82,7 @@ with ActorLoggingAdapter {
       log.debug("The actor [{}] is stopping because there are no more subscriptions " +
         "and it was scheduled for deletion", self.path)
       context stop self
-
+    case Sweep => // Do nothing
   }
 
   /**

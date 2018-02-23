@@ -53,6 +53,6 @@ class TestMediatorActor extends Actor with ActorLoggingAdapter {
   }
 
   override def postStop() = {
-    MessageService.unregisterMediator(mediator)
+    MessageService.unregisterMediator
   }
 }

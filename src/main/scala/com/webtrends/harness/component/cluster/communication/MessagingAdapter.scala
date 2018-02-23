@@ -14,7 +14,8 @@ trait MessagingAdapter {
   this: Actor =>
   import MessageService._
 
-  private[communication] lazy val defaultTimeout = context.system.settings.config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS) milliseconds
+  private[communication] lazy val messTimeout = context.system.settings.
+    config.getDuration("message-processor.default-send-timeout", TimeUnit.MILLISECONDS) milliseconds
 
   /**
     * Subscribe for messages. When receiving a message, it will be wrapped in an instance
@@ -71,7 +72,7 @@ trait MessagingAdapter {
     * @param topics the topics to look up subscribers
     * @return a future that contains a map of topics to subscribers
     */
-  def getSubscriptions(topics: Seq[String])(implicit timeout: akka.util.Timeout = defaultTimeout): Future[Map[String, Seq[ActorSelection]]] =
+  def getSubscriptions(topics: Seq[String])(implicit timeout: akka.util.Timeout = messTimeout): Future[Map[String, Seq[ActorSelection]]] =
     getOrInitMediator(context.system).ask(GetSubscriptions(topics))(timeout, self).mapTo[Map[String, Seq[ActorSelection]]]
 
   /**
@@ -83,7 +84,7 @@ trait MessagingAdapter {
     * @param msg the message to send
     * @param sender the implicit ActorRef to act as the sender and will default to self
     */
-  def send(topic: String, msg: Any)(implicit sender: ActorRef = context.self): Unit = {
+  def send(topic: String, msg: Any)(implicit sender: ActorRef = self): Unit = {
     getOrInitMediator(context.system).tell(Send(topic, Message.createMessage(topic, msg)), sender)
   }
 
@@ -96,7 +97,7 @@ trait MessagingAdapter {
     * @param msg the message to send
     * @param timeout the implicit timeout
     */
-  def sendWithFuture(topic: String, msg: Any)(implicit timeout: akka.util.Timeout): Future[Any] = {
+  def sendWithFuture(topic: String, msg: Any)(implicit timeout: akka.util.Timeout = messTimeout): Future[Any] = {
     getOrInitMediator(context.system).ask(Send(topic, Message.createMessage(topic, msg)))(timeout, self)
   }
 

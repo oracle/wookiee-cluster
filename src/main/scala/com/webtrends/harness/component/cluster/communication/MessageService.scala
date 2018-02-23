@@ -19,53 +19,55 @@
 
 package com.webtrends.harness.component.cluster.communication
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.{ActorRef, ActorSystem, PoisonPill}
 import akka.cluster.Cluster
 import com.webtrends.harness.component.cluster.ClusterManager
 import com.webtrends.harness.logging.LoggingAdapter
 
+import scala.collection.concurrent.TrieMap
+
 
 object MessageService extends LoggingAdapter {
-  private var mediatorOption: Option[ActorRef] = None
-  private var clusterOption: Option[Cluster] = None
+  private val mediatorMap = TrieMap[ActorSystem, ActorRef]()
+  private val clusterMap = TrieMap[ActorSystem, Cluster]()
 
   // Really only around for testing at this point
-  def registerMediator(actor: ActorRef) = {
+  def registerMediator(actor: ActorRef)(implicit system: ActorSystem) = {
     log.info(s"Registering Message Mediator: ${actor.path}")
-    mediatorOption = Some(actor)
+    mediatorMap.put(system, actor)
   }
 
-  def unregisterMediator(actor: ActorRef) = {
-    log.info(s"Unregistering Message Mediator: ${actor.path}")
-    mediatorOption match {
-      case Some(m) if m == actor => mediatorOption = None
-      case _ => //just do nothing
+  def unregisterMediator(implicit system: ActorSystem) = {
+    if (mediatorMap.contains(system)) {
+      log.info(s"Unregistering Message Mediator for actor system: [$system]")
+      mediatorMap.remove(system) foreach(_ ! PoisonPill)
     }
   }
 
   def getOrInitMediator(system: ActorSystem): ActorRef = {
-    if (mediatorOption.nonEmpty) return mediatorOption.get
-    mediatorOption synchronized {
-      if (mediatorOption.isEmpty) {
-        mediatorOption = Some(system.actorOf(
-          MessagingActor.props(MessagingSettings(system.settings.config)),
-          ClusterManager.MessagingName))
-        log.info(s"Initial Messaging Mediator, [${mediatorOption.get}], " +
-          s"Registered for System: $system")
+    mediatorMap.getOrElse(system, {
+      mediatorMap synchronized {
+        mediatorMap.getOrElseUpdate(system, {
+          val mediator = system.actorOf(
+            MessagingActor.props(MessagingSettings(system.settings.config)),
+            ClusterManager.MessagingName)
+          log.info(s"Initial Messaging Mediator, [$mediator], " +
+            s"Registered for System: $system")
+          mediator
+        })
       }
-      mediatorOption.get
-    }
+    })
   }
 
   def getOrRegisterCluster(system: ActorSystem): Cluster = {
-    if (clusterOption.nonEmpty && clusterOption.get.system.equals(system)) return clusterOption.get
-    clusterOption synchronized {
-      if (clusterOption.isEmpty || !clusterOption.get.system.equals(system)) {
-        log.info(s"Initial Cluster Registered for System: $system")
-        clusterOption = Some(Cluster(system))
+    clusterMap.getOrElse(system, {
+      clusterMap synchronized {
+        clusterMap.getOrElseUpdate(system, {
+          log.info(s"Initial Cluster Registered for System: $system")
+          Cluster(system)
+        })
       }
-      clusterOption.get
-    }
+    })
   }
 
   sealed trait MessageCommand {
