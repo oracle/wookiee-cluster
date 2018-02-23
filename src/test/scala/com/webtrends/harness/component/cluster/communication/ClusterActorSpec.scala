@@ -1,12 +1,13 @@
 package com.webtrends.harness.component.cluster.communication
 
-import akka.actor.{ActorRef, ActorSystem, Address, PoisonPill, Props}
-import akka.cluster.Cluster
+import java.util.concurrent.TimeUnit
+
+import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props}
 import akka.testkit.{TestKit, TestProbe}
-import com.typesafe.config.ConfigFactory
+import akka.util.Timeout
 import com.webtrends.harness.component.cluster.ClusterActor
 import com.webtrends.harness.component.cluster.ClusterActor.GetClusterState
-import com.webtrends.harness.component.zookeeper.ZookeeperService
+import com.webtrends.harness.component.zookeeper.ZookeeperAdapterNonActor
 import com.webtrends.harness.component.zookeeper.config.ZookeeperSettings
 import com.webtrends.harness.component.zookeeper.mock.MockZookeeper
 import com.webtrends.harness.service.test.config.TestConfig
@@ -16,13 +17,13 @@ import org.apache.curator.test.TestingServer
 import org.specs2.mutable.SpecificationWithJUnit
 
 import scala.concurrent.Await
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 
 class ClusterActorSpec extends SpecificationWithJUnit {
+  implicit val timeout = Timeout(5, TimeUnit.SECONDS)
   var zkServer: TestingServer = _
   implicit var system: ActorSystem = _
-  var zkService: ZookeeperService = _
+  var zkService: ZookeeperAdapterNonActor = _
   var clusterActor: ActorRef = _
   var messageActor: ActorRef = _
 
