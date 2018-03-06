@@ -359,23 +359,21 @@ class ClusterActor extends HActor
                 newNodes.size match {
                   case 0 => // The nodes we are watching are now ok so we can stop
                     balancedCluster = true
-                    log.info("The cluster appears to be in order")
+                    log.debug("The cluster appears to be in order")
                   case _ => // We still have nodes to watch so lets send them back
                     if (retries <= 1) {
                       balancedCluster = false
                       log.warn("The following nodes are suspect because they are registered in Zookeeper, but are not part of the cluster: {}", newNodes.mkString(","))
                       newNodes.foreach(n => sendRejoinMessage(AddressFromURIString(s"${selfAddress.protocol}://${selfAddress.system}@$n")))
-                    }
-                    else {
+                    } else {
                       balancedCluster = false
                       context.system.scheduler.scheduleOnce(nextInterval) { validateCluster(retries - 1, newNodes) }
                     }
                 }
             }
-          }
-          else {
+          } else {
             balancedCluster = true
-            log.info("The cluster appears to be in order")
+            log.debug("The cluster appears to be in order")
           }
 
         case Failure(e) =>
@@ -433,12 +431,10 @@ class ClusterActor extends HActor
     Future {
       if (cluster.isTerminated) {
         HealthComponent("cluster", ComponentState.CRITICAL, "The cluster is currently terminated")
-      }
-      else if (!balancedCluster) {
+      } else if (!balancedCluster) {
         HealthComponent("cluster", ComponentState.DEGRADED,
           "The cluster is potentially fragmented which means that there are fewer nodes in the cluster then defined in Zookeeper. If this continues to alert then it warrants a review")
-      }
-      else {
+      } else {
         HealthComponent("cluster", ComponentState.NORMAL,
           s"The cluster is currently running and we are ${
             if (leader) ""

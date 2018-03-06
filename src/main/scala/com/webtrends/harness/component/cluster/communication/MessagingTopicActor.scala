@@ -62,8 +62,8 @@ with ActorLoggingAdapter {
   override def preStart: Unit = {
     // Take the seed subscriptions and set them up
     updateSubscriptions(seed)
-    log.info(s"Message Topic Actor Started for self address: [$selfAddress], " +
-      s"subscriptions: [${seed.mkString(",")}]")
+    log.debug(s"Message Topic Actor Started with " +
+      s"subscriptions: [${seed.map(_.subscriber.path.name).mkString(",")}]")
   }
 
   override def postStop(): Unit = {
@@ -89,8 +89,8 @@ with ActorLoggingAdapter {
    * Bulk update the subscriptions
    */
   private def updateSubscriptions(subscriptions: Set[Subscription]): Unit = {
-    log.info("The actor [{}] is updating it's subscriptions: {}",
-      self.path, subscriptions.map(_.subscriber.path).mkString(","))
+    log.debug("The actor [{}] is updating it's subscriptions: {}",
+      self.path.name, subscriptions.map(_.subscriber.path.name).mkString(","))
 
     // Unwatch all of the entries that are not in the passed in set
     val removals = registry.keySet &~ subscriptions.map(_.subscriber)
@@ -169,7 +169,6 @@ with ActorLoggingAdapter {
 
     if (routees.nonEmpty) {
       // Forward the message through our router
-      log.debug("Routing the message")
       Router(routingLogic, routees).route(message, sender())
     }
     else {
