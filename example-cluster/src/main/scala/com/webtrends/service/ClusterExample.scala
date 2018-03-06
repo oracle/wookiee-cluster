@@ -32,14 +32,13 @@ import scala.util.{Failure, Success}
 case class TestMessage(message: String, timestamp: DateTime)
 
 class ClusterExample extends Service with ActorLoggingAdapter with MessagingAdapter {
-
   /**
    * Subscribe to the topics for which we are going to listen
    */
   override def preStart: Unit = {
-    subscribe("cluster-topic", self, false)
-    subscribe("cluster-topic-with-response", self, false)
-    subscribe("internal-topic", self, true)
+    subscribe("cluster-topic", self)
+    subscribe("cluster-topic-with-response", self)
+    subscribe("internal-topic", self, localOnly = true)
     super.preStart
   }
 
@@ -56,7 +55,7 @@ class ClusterExample extends Service with ActorLoggingAdapter with MessagingAdap
    * Process messages.
    */
   override def serviceReceive = ({
-    case Ready(meta) =>
+    case Ready(_) =>
       log.info("Ready message received, start sending messages")
       val thread = new Thread {
         override def run: Unit = {
@@ -89,13 +88,12 @@ class ClusterExample extends Service with ActorLoggingAdapter with MessagingAdap
    */
   def sendMessages = {
     while (true) {
-      val msg =
       // Send the message to the topic, only one subscriber will pick it up
       send("cluster-topic", TestMessage("This is a test message", DateTime.now))
       // Send the message to the topic and expect a response within five seconds
-      sendWithFuture("cluster-topic-with-response", TestMessage("This is a message that is expecting a response", DateTime.now))(5000).onComplete {
+      sendWithFuture("cluster-topic-with-response", TestMessage("This is a message that is expecting a response", DateTime.now)).onComplete {
         case Success(answer) => log.info("    Answer: " + answer)
-        case Failure(fail) => log.info("Failed to get a response to cluster-topic-with-response")
+        case Failure(_) => log.info("Failed to get a response to cluster-topic-with-response")
       }
       // This message should only be acted upon by this cluster node
       send("internal-topic", TestMessage("This is a message from " + InetAddress.getLocalHost, DateTime.now))

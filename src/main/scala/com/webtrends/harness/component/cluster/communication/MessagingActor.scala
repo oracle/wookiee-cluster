@@ -62,7 +62,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   import context.dispatcher
 
   @SerialVersionUID(1L) case class Share()
-  @SerialVersionUID(1L) case class InitialShareComplete()
   @SerialVersionUID(1L) case class InitialShareTimeout()
 
   def eventStream: EventStream = context.system.eventStream
