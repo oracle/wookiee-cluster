@@ -144,9 +144,10 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    * a gossip share or that we have sent one out to a remote node
    * @return
    */
-  def clusterInitializing: Receive = commonProcessing orElse clusterProcessing orElse shareProcessing orElse {
+  def clusterInitializing: Receive = {
     case cs: CurrentClusterState => // The initial sharing has completed so switch to processing mode
-      log.info("Initial cluster state has been completed")
+      log.info(s"Initial cluster state has been completed." +
+        s"\nMembers: [${cs.members.mkString(",")}]\nLeader: [${cs.leader.orNull}]")
       context.become(mainProcessing)
       unstashAll()
       context.parent ! MessagingStarted
@@ -167,76 +168,90 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
   /**
    * Once the service is initialized then this is the main processing unit
-   * @return
    */
   def mainProcessing: Receive = health orElse commonProcessing orElse clusterProcessing orElse
     shareProcessing orElse pubSubProcessing orElse {
-    case CurrentClusterState(members, _, _, _, _) => updateNodeStatus(members.map(m => (m.address, m.status)).toSeq)
+    case CurrentClusterState(members, _, _, _, _) =>
+      tryAndLogError(updateNodeStatus(members.map(m => (m.address, m.status)).toSeq))
     case InitialShareTimeout => // Ignore
-    case msg => log.warning("Unknown message type received: {}", msg)
+    case msg =>
+      log.warning("Unknown message type received: {}", msg)
   }
 
   /**
-   * Process the pub/sub messages messages
-   * @return
+   * Process the pub/sub messages
    */
   def pubSubProcessing: Receive = {
-    case message: Subscribe => subscribe(message)
-    case message: Unsubscribe => unsubscribe(message)
-    case message: Publish => forwardToTopic(message)
-    case message: Send => forwardToTopic(message)
+    case message: Subscribe =>
+      tryAndLogError(subscribe(message))
+    case message: Unsubscribe =>
+      tryAndLogError(unsubscribe(message))
+    case message: Publish =>
+      tryAndLogError(forwardToTopic(message))
+    case message: Send =>
+      tryAndLogError(forwardToTopic(message))
   }
 
   /**
    * Process the message sharing messages
-   * @return
    */
   def shareProcessing: Receive = {
-    case _: Share => shareSubscriptions
-    case Status(remoteVersions) => verifyVersions(remoteVersions, sender.path)
-    case Delta(entries) => updateDeltas(entries)
+    case _: Share =>
+      tryAndLogError(shareSubscriptions)
+    case Status(remoteVersions) =>
+      tryAndLogError(verifyVersions(remoteVersions, sender.path))
+    case Delta(entries) =>
+      tryAndLogError(updateDeltas(entries))
   }
 
   /**
    * Process cluster specific messages
-   * @return
    */
   def clusterProcessing: Receive = {
-    case UnreachableMember(member) => updateNodeRemoteStatus(member.address, availability = false)
-    case ReachableMember(member) => updateNodeRemoteStatus(member.address, availability = true)
-    case m: MemberEvent => updateNodeStatus(Seq((m.member.address, m.member.status)))
-    case Terminated(ref) => terminated(ref)
+    case UnreachableMember(member) =>
+      tryAndLogError(updateNodeRemoteStatus(member.address, availability = false))
+    case ReachableMember(member) =>
+      tryAndLogError(updateNodeRemoteStatus(member.address, availability = true))
+    case m: MemberEvent =>
+      tryAndLogError(updateNodeStatus(Seq((m.member.address, m.member.status))))
+    case Terminated(ref) =>
+      tryAndLogError(terminated(ref))
   }
 
   /**
    * Process messages that are required either during initialization or actual running phases
-   * @return
    */
   def commonProcessing: Receive = {
     // ---- Subscription Event Registration ----
-    case RegisterSubscriptionEvent(registrar, to) => eventStream.subscribe(registrar, to)
-    case UnregisterSubscriptionEvent(registrar, to) => eventStream.unsubscribe(registrar, to)
+    case RegisterSubscriptionEvent(registrar, to) =>
+      tryAndLogError(eventStream.subscribe(registrar, to))
+    case UnregisterSubscriptionEvent(registrar, to) =>
+      tryAndLogError(eventStream.unsubscribe(registrar, to))
 
     case GetSubscriptions(topics) =>
-      var map: Map[String, Seq[ActorSelection]] = Map.empty
+      tryAndLogError({
+        var map: Map[String, Seq[ActorSelection]] = Map.empty
 
-      topics foreach {
-        topic =>
-          val set = (for {
-            entry <- registry.values
-            if entry.content.contains(topic)
-            sub <- entry.content(topic).subscriptions
-          } yield context.actorSelection(sub.subscriber.path.toStringWithAddress(entry.address))).toSeq
+        topics foreach {
+          topic =>
+            val set = (for {
+              entry <- registry.values
+              if entry.content.contains(topic)
+              sub <- entry.content(topic).subscriptions
+            } yield context.actorSelection(sub.subscriber.path.toStringWithAddress(entry.address))).toSeq
 
-          map += (topic -> set)
-      }
-      sender() ! map
+            map += (topic -> set)
+        }
+        sender() ! map
+      })
   }
 
   override def checkHealth = {
     log.debug("MessageProcessor health requested")
     Future.successful(
-      HealthComponent("processor", ComponentState.NORMAL, s"The message processor is currently running and managing ${context.children.size} topics")
+      HealthComponent("processor", ComponentState.NORMAL,
+        s"The message processor is currently running and managing ${context.children.size} topics",
+        Some(s"Nodes in cluster: [${nodes.map(_.hostPort).mkString(",")}]"))
     )
   }
 
@@ -361,7 +376,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    * @param actorRef the actor that has terminated
    */
   private def terminated(actorRef: ActorRef): Unit = {
-
     // Get all of the topics for this actor
     val topics = (for {
       content <- registry(selfAddress).content
@@ -442,30 +456,23 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
    * @param sourcePath the Path for the remote actor that is sharing this information
    */
   private def verifyVersions(remoteVersions: Map[Address, Long], sourcePath: ActorPath): Unit = {
-
     if (!nodes(sender().path.address)) {
       log.info("Ignoring received subscription information status from unknown node [{}] ", sender().path)
-    }
-    else {
+    } else {
       log.debug(s"Verifying versions from {}", sourcePath)
 
       // See if our data is "newer" then the remote service
       val delta = collectDelta(remoteVersions)
       val newer = remoteHasNewerVersion(remoteVersions)
-      if (delta.isEmpty && !newer) {
-        if (shareTask.isEmpty) {
-          self ! InitialShareComplete
-        } else log.debug("Delta is empty, however, the shareTask has already been set")
-      } else {
-        if (delta.nonEmpty) {
-          log.debug("The subscription information for {} is newer then {} so we are sending the delta back", self.path, sourcePath)
-          sender() ! Delta(delta)
-        }
-        // Now check and see if any of the remote data is newer then ours
-        if (newer) {
-          log.debug("The subscription information for {} is newer then {} so we are asking for the delta back", sourcePath, self.path)
-          sender() ! Status(versions = localVersions) // it will reply with Delta
-        }
+
+      if (delta.nonEmpty) {
+        log.debug("The subscription information for {} is newer then {} so we are sending the delta back", self.path, sourcePath)
+        sender() ! Delta(delta)
+      }
+      // Now check and see if any of the remote data is newer then ours
+      if (newer) {
+        log.debug("The subscription information for {} is newer then {} so we are asking for the delta back", sourcePath, self.path)
+        sender() ! Status(versions = localVersions) // it will reply with Delta
       }
     }
   }
@@ -489,20 +496,17 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
         if (remote.isDefined) {
           log.debug(remoteVersions.mkString(","))
           log.debug(s"Version {} for {} is older then the local version of {}", remote.get, add, v)
-        }
-        else {
+        } else {
           log.debug(s"The registry for {} is not present in the gossiped subscriptions. Adding it to the deltas.", add)
         }
 
         // Grab the non-local subscriptions for this node
         val nonLocal = entry.content.filter {
           case (_, value) => remote.isEmpty || value.clock.counter > remote.get
-        } map {
-          d =>
-            d._1 -> d._2.copy(subscriptions = d._2.subscriptions.filter(_.localOnly == false))
+        } map { d =>
+          d._1 -> d._2.copy(subscriptions = d._2.subscriptions.filter(_.localOnly == false))
         }
         registry(add).copy(content = nonLocal)
-
     }
   }
 
@@ -565,10 +569,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
             }
           }
       }
-
-      // The sharing process has completed
-      if (shareTask.isEmpty) self ! InitialShareComplete
-      else log.debug("We would like to send InitialShareComplete, but shareTask is already filled.")
     }
   }
 
@@ -616,9 +616,9 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       case (address, status) =>
 
         status match {
-          case MemberStatus.Joining =>
+          case MemberStatus.Joining | MemberStatus.WeaklyUp =>
             // Add the member to the list of nodes
-            log.info(s"Member Joining: $address, won't come Up until akka.cluster.role is satisfied")
+            log.debug(s"Member $status: $address, won't come Up until akka.cluster.role is satisfied")
             //nodes += address
             //updateNodeRemoteStatus(address, availability = true)
 
@@ -645,6 +645,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   private def removeNode(member: (Address, MemberStatus)): Unit = {
     if (member._1 == selfAddress) {
       // If we are asked to be removed then just shut ourself down
+      log.error(s"Message Actor asked to stop due to status update, member: ${member._1.hostPort}, status: ${member._2}")
       context stop self
     } else {
       nodes -= member._1
