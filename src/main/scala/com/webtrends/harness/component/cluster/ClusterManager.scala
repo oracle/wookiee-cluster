@@ -22,6 +22,8 @@ import com.webtrends.harness.component.Component
 import com.webtrends.harness.component.cluster.communication.{MessageService, MessagingAdapter}
 import com.webtrends.harness.component.zookeeper.Zookeeper
 
+import scala.collection.mutable
+
 /**
  * Important to note that if you use clustering you must not include the Zookeeper component
  * as Clustering will start it up independently, and zookeeper config must be within the clustering config
@@ -54,4 +56,12 @@ class ClusterManager(name:String) extends Component(name)
 object ClusterManager {
   val ComponentName = "wookiee-cluster"
   val MessagingName = "messaging"
+
+  // TODO Think about moving this up to wookiee-core
+  // Creates a thread-safe hash set as a Scala mutable.Set
+  def createSet[T](): mutable.Set[T] = {
+    import scala.collection.JavaConverters._
+    java.util.Collections.newSetFromMap(
+      new java.util.concurrent.ConcurrentHashMap[T, java.lang.Boolean]).asScala
+  }
 }
