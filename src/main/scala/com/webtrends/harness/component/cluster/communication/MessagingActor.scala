@@ -28,6 +28,7 @@ import akka.cluster.ClusterEvent._
 import akka.cluster.MemberStatus
 import akka.event.EventStream
 import com.webtrends.harness.app.HActor
+import com.webtrends.harness.component.cluster.ClusterManager
 import com.webtrends.harness.component.cluster.communication.MessageProcessor.MessagingStarted
 import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.Internal.{RegisterSubscriptionEvent, UnregisterSubscriptionEvent}
 import com.webtrends.harness.component.cluster.communication.MessageSubscriptionEvent.{SubscriptionAddedEvent, SubscriptionRemovedEvent}
@@ -35,7 +36,7 @@ import com.webtrends.harness.health.{ComponentState, HealthComponent}
 
 import scala.Predef._
 import scala.collection.JavaConverters._
-import scala.collection.immutable
+import scala.collection.{immutable, mutable}
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.forkjoin.ThreadLocalRandom
@@ -84,7 +85,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   var shareTask: Option[Cancellable] = None
 
   // The list of global addresses
-  var nodes: Set[Address] = Set.empty
+  val nodes: mutable.Set[Address] = ClusterManager.createSet[Address]()
 
   // The list of subscribers
   private val registry = (new ConcurrentHashMap[Address, RegistryEntry]() asScala).withDefault(a =>
@@ -522,51 +523,50 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
     if (nodes(sender().path.address)) {
 
       // Don't update local registrations
-      deltas.filterNot(_.address == selfAddress) foreach {
-        b =>
-          if (nodes(b.address)) {
-            val entry = registry(b.address)
-            if (b.clock.counter > entry.clock.counter) {
+      deltas.filterNot(_.address == selfAddress) foreach { b =>
+        if (nodes(b.address)) {
+          val entry = registry(b.address)
+          if (b.clock.counter > entry.clock.counter) {
 
-              // Diff the existing subscriptions with the new version.
-              val removals = (for {
-                kp <- entry.content
-                sub <- kp._2.subscriptions
-                // If the topic is not in the new set or if the specific actor path is not then we know that is has been removed
-                if !b.content.contains(kp._1) || !b.content(kp._1).subscriptions.exists(_.subscriber.path == sub.subscriber.path)
-              } yield (kp._2.topic, sub.subscriber)).toSet
+            // Diff the existing subscriptions with the new version.
+            val removals = (for {
+              kp <- entry.content
+              sub <- kp._2.subscriptions
+              // If the topic is not in the new set or if the specific actor path is not then we know that is has been removed
+              if !b.content.contains(kp._1) || !b.content(kp._1).subscriptions.exists(_.subscriber.path == sub.subscriber.path)
+            } yield (kp._2.topic, sub.subscriber)).toSet
 
-              val adds = (for {
-                kp <- b.content
-                sub <- kp._2.subscriptions
-                // If the topic is not in the old set or if the specific actor path is not then we know that is has been added
-                if !entry.content.contains(kp._1) || !entry.content(kp._1).subscriptions.exists(_.subscriber.path == sub.subscriber.path)
-              } yield (kp._2.topic, sub.subscriber)).toSet
+            val adds = (for {
+              kp <- b.content
+              sub <- kp._2.subscriptions
+              // If the topic is not in the old set or if the specific actor path is not then we know that is has been added
+              if !entry.content.contains(kp._1) || !entry.content(kp._1).subscriptions.exists(_.subscriber.path == sub.subscriber.path)
+            } yield (kp._2.topic, sub.subscriber)).toSet
 
-              // Merge the existing subscriptions with the deltas
-              val newEntry = entry.copy(
-                clock = entry.clock.copy(counter = b.clock.counter, time = b.clock.time ),
-                content = entry.content ++ b.content
-              )
-              // Now update the registry
-              registry += (b.address -> newEntry)
+            // Merge the existing subscriptions with the deltas
+            val newEntry = entry.copy(
+              clock = entry.clock.copy(counter = b.clock.counter, time = b.clock.time ),
+              content = entry.content ++ b.content
+            )
+            // Now update the registry
+            registry += (b.address -> newEntry)
 
-              // These were removed
-              removals foreach {
-                r => publishSubscriptionEvent(added = false, r._1, r._2)
-              }
-              // These were added
-              adds foreach {
-                r => publishSubscriptionEvent(added = true, r._1, r._2)
-              }
-
-              log.debug("There is a difference in subscription data so the system will update using the deltas sent to it from {}: {} [remote], {} [local]",
-                b.address, b.clock, entry.clock)
-
-              // Now we need to update the subscriptions for any existing topic
-              updateTopicSubscriptions
+            // These were removed
+            removals foreach {
+              r => publishSubscriptionEvent(added = false, r._1, r._2)
             }
+            // These were added
+            adds foreach {
+              r => publishSubscriptionEvent(added = true, r._1, r._2)
+            }
+
+            log.debug("There is a difference in subscription data so the system will update using the deltas sent to it from {}: {} [remote], {} [local]",
+              b.address, b.clock, entry.clock)
+
+            // Now we need to update the subscriptions for any existing topic
+            updateTopicSubscriptions
           }
+        }
       }
     }
   }

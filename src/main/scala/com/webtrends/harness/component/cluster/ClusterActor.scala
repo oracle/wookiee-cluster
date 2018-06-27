@@ -18,8 +18,6 @@
  */
 package com.webtrends.harness.component.cluster
 
-import java.net.InetAddress
-
 import akka.actor._
 import akka.cluster.ClusterEvent._
 import akka.cluster.MemberStatus
@@ -180,10 +178,9 @@ class ClusterActor extends HActor
           getChildren(membersPath, includeData = true)(clusterJoinTimeout).mapTo[Seq[(String, Option[Array[Byte]])]] onComplete {
             case Success(nodes) =>
               if (nodes == Nil || nodes.size == 1) {
-                log.info("No other nodes, joining the cluster as self at {}", selfAddress)
+                log.info(s"No other nodes: [${nodes.map(_._1)}], joining the cluster as self at {}", selfAddress)
                 cluster.join(selfAddress)
               } else {
-                val localHost = InetAddress.getLocalHost.getCanonicalHostName
                 val protocol = selfAddress.protocol
                 val root = selfAddress.system
 
@@ -213,16 +210,15 @@ class ClusterActor extends HActor
 
                 val sub = getNodes(count).distinct.take(count)
                 log.info(s"Seed nodes from Zookeeper are: ${sub.mkString(",")}")
-                // Exclude the local node in the seed nodes
-                val adds = sub.map(node => AddressFromURIString(s"$protocol://$root@$node")).filterNot { address =>
-                    address.host.get.equalsIgnoreCase(localHost) && address.port.contains(selfAddress.port.getOrElse(-1))
-                }.toIndexedSeq
+                // Local node should be present, sort by name so that leader is consistent across nodes
+                val adds = sub.map(node => AddressFromURIString(s"$protocol://$root@$node"))
+                  .toIndexedSeq.sortBy(_.toString)
 
                 if (adds.isEmpty) {
                   log.info("Joining the cluster as self at {}", selfAddress)
                   cluster.join(selfAddress)
                 } else {
-                  log.info(s"Joining the cluster with the seed nodes ${adds.mkString(",")}")
+                  log.info(s"Joining the cluster with the seed nodes: [${adds.mkString(",")}]")
                   cluster.joinSeedNodes(adds)
                 }
               }
@@ -295,6 +291,7 @@ class ClusterActor extends HActor
 
     // The live members is the difference between all members and those that are currently unreachable
     val live = cluster.state.members -- cluster.state.unreachable
+    log.trace(s"Validating Cluster Membership. Live Members: $live, Unreachable: ${cluster.state.unreachable}")
 
     // If there were previously more then one node in the cluster we need to make sure we have not
     // been stranded.
