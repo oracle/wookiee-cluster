@@ -340,7 +340,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
         }.getOrElse(log.warning("Received unsubscribe from topic {} which was not subscribed to", topic))
 
-        log.info("The actor [{}] is unsubscribing to the topic {}", message.ref.path, topic)
+        log.debug("The actor [{}] is unsubscribing to the topic {}", message.ref.path, topic)
 
         // Send a message to the topic actor to remove the subscription
         context.child(URLEncoder.encode(topic, "utf-8")) match {
@@ -459,7 +459,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
     if (!nodes(sender().path.address)) {
       log.info("Ignoring received subscription information status from unknown node [{}] ", sender().path)
     } else {
-      log.debug(s"Verifying versions from {}", sourcePath)
+      log.trace(s"Verifying versions from {}", sourcePath)
 
       // See if our data is "newer" then the remote service
       val delta = collectDelta(remoteVersions)
