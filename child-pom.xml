@@ -69,12 +69,12 @@
         <dependency>
             <groupId>com.twitter</groupId>
             <artifactId>chill_${scala.artifact.version}</artifactId>
-            <version>0.5.1</version>
+            <version>0.7.7</version>
         </dependency>
         <dependency>
             <groupId>com.twitter</groupId>
             <artifactId>chill-akka_${scala.artifact.version}</artifactId>
-            <version>0.5.1</version>
+            <version>0.7.7</version>
         </dependency>
         <dependency>
             <!--Used by chill when creating our own KryoInstantiator-->
