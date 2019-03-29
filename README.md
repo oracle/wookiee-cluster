@@ -22,7 +22,7 @@ Add [latest version](https://github.com/oracle/wookiee-cluster/releases/latest) 
 ~~~~
 <dependency>
     <groupId>com.webtrends</groupId>
-    <artifactId>wookiee-cluster</artifactId>
+    <artifactId>wookiee-cluster_2.11</artifactId>
     <version>${wookiee.version}</version>
 </dependency>
 ~~~~
