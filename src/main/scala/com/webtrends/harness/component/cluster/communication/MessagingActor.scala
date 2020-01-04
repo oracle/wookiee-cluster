@@ -25,7 +25,7 @@ import java.util.concurrent.{ConcurrentHashMap, TimeUnit}
 import akka.ConfigurationException
 import akka.actor._
 import akka.cluster.ClusterEvent._
-import akka.cluster.MemberStatus
+import akka.cluster.{Cluster, MemberStatus}
 import akka.event.EventStream
 import com.webtrends.harness.app.HActor
 import com.webtrends.harness.component.cluster.ClusterManager
@@ -67,7 +67,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
   def eventStream: EventStream = context.system.eventStream
 
-  lazy val cluster = Try(Some(MessageService.getOrRegisterCluster(context.system)))
+  lazy val cluster: Option[Cluster] = Try(Some(MessageService.getOrRegisterCluster(context.system)))
     .recoverWith({
     case _: ConfigurationException =>
       log.warning("The config entry for ActorRefProvider is not 'ClusterActorRefProvider'. Not hooked up to any cluster")
@@ -77,7 +77,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       Try(None)
   }).get
 
-  lazy val selfAddress = cluster match {
+  lazy val selfAddress: Address = cluster match {
     case Some(clus) => clus.selfAddress
     case None => self.path.address
   }
@@ -131,7 +131,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
   }
 
   // If clustering is enabled then we need to go through the initialization phase first
-  override def receive = super.receive orElse (if (cluster.isDefined) clusterInitializing else standAloneProcessing)
+  override def receive: PartialFunction[Any, Unit] = super.receive orElse (if (cluster.isDefined) clusterInitializing else standAloneProcessing)
 
   /**
    * If we are not running with the cluster then just handle the basics
@@ -164,7 +164,6 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
     case _ => stash() // Stash everything else for now
   }
-
 
   /**
    * Once the service is initialized then this is the main processing unit
@@ -246,7 +245,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
       })
   }
 
-  override def checkHealth = {
+  override def checkHealth: Future[HealthComponent] = {
     log.debug("MessageProcessor health requested")
     Future.successful(
       HealthComponent("processor", ComponentState.NORMAL,
@@ -289,7 +288,7 @@ class MessagingActor(shareInterval: FiniteDuration, trashInterval: FiniteDuratio
 
     message.topics foreach {
       topic =>
-        log.info("The actor [{}] is subscribing to the topic {}", message.ref.path, topic)
+        log.debug("The actor [{}] is subscribing to the topic {}", message.ref.path, topic)
         // Make sure we have a topic actor
         val encode = URLEncoder.encode(topic, "utf-8")
         context.child(encode) match {
