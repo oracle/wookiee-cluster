@@ -34,11 +34,6 @@
             <outputDirectory>/lib</outputDirectory>
             <scope>runtime</scope>
             <excludes>
-                <exclude>com.typesafe.akka:akka-actor*:*:*</exclude>
-                <exclude>com.typesafe.akka:akka-cluster*:*:*</exclude>
-                <exclude>com.typesafe.akka:akka-remote*:*:*</exclude>
-                <exclude>io.spray:*:*:*</exclude>
-                <exclude>com.netflix.curator:*:*:*</exclude>
             </excludes>
         </dependencySet>
     </dependencySets>
