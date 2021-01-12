@@ -228,7 +228,7 @@ class ClusterActor extends HActor
                 classOf[LeaderChanged], classOf[ReachabilityEvent], classOf[MemberEvent])
 
               // Initialize the state interval
-              stateCheck = Some(context.system.scheduler.scheduleOnce(selfStateInterval) { validateClusterMembership })
+              //stateCheck = Some(context.system.scheduler.scheduleOnce(selfStateInterval) { validateClusterMembership })
 
               // Send a message to the parent that we have joined the cluster
               context.parent ! ClusterJoined
