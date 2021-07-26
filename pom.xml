@@ -69,16 +69,16 @@
 
     <repositories>
         <repository>
+            <id>Third party builds</id>
+            <url>https://artifactory-slc.oraclecorp.com/artifactory/infy-thirdparty-release-local</url>
+        </repository>
+        <repository>
             <id>JFrog</id>
             <url>http://oss.jfrog.org/oss-release-local</url>
         </repository>
         <repository>
             <id>JFrog Snap</id>
             <url>http://oss.jfrog.org/oss-snapshot-local</url>
-        </repository>
-        <repository>
-            <id>Third party builds</id>
-            <url>https://artifactory-slc.oraclecorp.com/artifactory/infy-thirdparty-release-local</url>
         </repository>
     </repositories>
 
